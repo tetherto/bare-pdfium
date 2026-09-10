@@ -7,8 +7,10 @@ jobs:
   prebuild:
     strategy:
       fail-fast: false
-      # Desktop targets for this test publish; the full matrix lives in
-      # prebuild.yml. Mobile/win legs are added here once each is validated.
+      # Every target validated by prebuild.yml. android-ia32 is omitted
+      # (pdfium-binaries ships no android-x86); win32-arm64 is omitted (the
+      # holepunch base image fails to find npm on the windows-arm64 runner,
+      # unrelated to this addon). This set matches what the @qvac/* addons ship.
       matrix:
         include:
           - os: ubuntu-22.04
@@ -17,20 +19,47 @@ jobs:
           - os: ubuntu-22.04-arm
             platform: linux
             arch: arm64
+          - os: ubuntu-24.04
+            platform: android
+            arch: x64
+          - os: ubuntu-24.04
+            platform: android
+            arch: arm64
+          - os: ubuntu-24.04
+            platform: android
+            arch: arm
           - os: macos-14
             platform: darwin
             arch: x64
           - os: macos-14
             platform: darwin
             arch: arm64
+          - os: macos-14
+            platform: ios
+            arch: arm64
+          - os: macos-14
+            platform: ios
+            arch: arm64
+            tags: -simulator
+            flags: --simulator
+          - os: macos-14
+            platform: ios
+            arch: x64
+            tags: -simulator
+            flags: --simulator
+          - os: windows-2022
+            platform: win32
+            arch: x64
     runs-on: ${{ matrix.os }}
-    name: Build / ${{ matrix.platform }}-${{ matrix.arch }}
+    name: Build / ${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.tags }}
     steps:
       - uses: holepunchto/actions/bare-base@v1
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
           arch: ${{ matrix.arch }}
+          flags: ${{ matrix.flags }}
+          tags: ${{ matrix.tags }}
           upload: true
   publish:
     runs-on: ubuntu-latest
