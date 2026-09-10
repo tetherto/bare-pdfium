@@ -1,0 +1,41 @@
+{
+  "name": "bare-pdfium",
+  "version": "1.0.0",
+  "description": "PDF page rasterization for Bare, backed by PDFium",
+  "exports": {
+    "./package": "./package.json",
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "types": "./index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "binding.c",
+    "binding.js",
+    "CMakeLists.txt",
+    "cmake",
+    "prebuilds"
+  ],
+  "addon": true,
+  "scripts": {
+    "format": "prettier --write .",
+    "lint": "prettier --check .",
+    "test": "brittle-bare test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moromisato/bare-pdfium.git"
+  },
+  "author": "moromisato",
+  "license": "Apache-2.0",
+  "prettier": "prettier-config-holepunch",
+  "devDependencies": {
+    "brittle": "^3.4.0",
+    "cmake-bare": "^1.1.2",
+    "prettier": "^3.3.3",
+    "prettier-config-holepunch": "^2.0.0"
+  }
+}

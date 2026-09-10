@@ -1,0 +1,24 @@
+bare-pdfium
+Copyright (c) 2026 moromisato
+
+Licensed under the Apache License, Version 2.0 (the "License");
+see LICENSE for the full text.
+
+--------------------------------------------------------------------------------
+This product's prebuilt binaries bundle PDFium and its dependencies.
+
+PDFium
+  Copyright The PDFium Authors
+  Licensed under the BSD 3-Clause License.
+  https://pdfium.googlesource.com/pdfium/
+
+pdfium-binaries (the prebuilt PDFium distribution fetched at build time)
+  Copyright 2014-2025 Benoit Blanchon
+  Licensed under the MIT License.
+  https://github.com/bblanchon/pdfium-binaries
+
+PDFium bundles further third-party components under permissive licenses
+(abseil, freetype, libjpeg-turbo, libpng, lcms, libopenjpeg, icu, zlib,
+simdutf, agg23, fast_float, llvm-libc). Their license texts ship inside the
+pdfium-binaries archive under licenses/ and must accompany any redistribution
+of the compiled library.
