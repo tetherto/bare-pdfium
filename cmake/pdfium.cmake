@@ -9,23 +9,13 @@ include_guard(GLOBAL)
 set(PDFIUM_RELEASE "latest" CACHE STRING "pdfium-binaries release tag, or 'latest'")
 
 # Resolve the bblanchon asset name from the CMake target description. bare-make
-# drives CMAKE_SYSTEM_NAME / CMAKE_SYSTEM_PROCESSOR through its per-target
-# toolchains, so this covers cross builds as well as the host build.
+# asks cmake-bare for the resolved target, which reads CMAKE_OSX_ARCHITECTURES /
+# CMAKE_ANDROID_ARCH_ABI etc. — so a cross build (darwin-x64 on an arm64 runner,
+# android, ios) names its true target, not the host's CMAKE_SYSTEM_PROCESSOR.
 if(NOT DEFINED PDFIUM_ASSET)
-  string(TOLOWER "${CMAKE_SYSTEM_NAME}" _sys)
-  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _proc)
-
-  if(_proc MATCHES "aarch64|arm64")
-    set(_arch "arm64")
-  elseif(_proc MATCHES "x86_64|amd64|x64")
-    set(_arch "x64")
-  elseif(_proc MATCHES "armv7|armhf|^arm$")
-    set(_arch "arm")
-  elseif(_proc MATCHES "i[3-6]86|x86|ia32")
-    set(_arch "x86")
-  else()
-    set(_arch "${_proc}")
-  endif()
+  bare_platform(_sys)
+  bare_arch(_arch)
+  # cmake-bare and bblanchon agree on arm64/arm/x64/x86, so no arch remap needed
 
   if(_sys STREQUAL "darwin")
     set(PDFIUM_ASSET "pdfium-mac-${_arch}")
@@ -33,7 +23,7 @@ if(NOT DEFINED PDFIUM_ASSET)
     set(PDFIUM_ASSET "pdfium-linux-${_arch}")
   elseif(_sys STREQUAL "android")
     set(PDFIUM_ASSET "pdfium-android-${_arch}")
-  elseif(_sys STREQUAL "windows")
+  elseif(_sys STREQUAL "win32")
     set(PDFIUM_ASSET "pdfium-win-${_arch}")
   elseif(_sys STREQUAL "ios")
     # device vs simulator: the simulator sysroot name carries "simulator"
