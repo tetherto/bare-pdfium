@@ -1,9 +1,9 @@
 {
-  "name": "@moromisato/bare-pdfium",
+  "name": "bare-pdfium",
   "version": "1.1.0",
   "description": "PDF page rasterization for Bare, backed by PDFium",
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "exports": {
     "./package": "./package.json",
