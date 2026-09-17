@@ -45,6 +45,13 @@ class Doc {
     return binding.extractText(this._handle, page)
   }
 
+  *textPages() {
+    const count = this.pageCount()
+    for (let page = 0; page < count; page++) {
+      yield { page, text: this.extractText(page) }
+    }
+  }
+
   close() {
     if (this._handle) {
       binding.close(this._handle)
@@ -74,6 +81,15 @@ exports.render = function render(pdf, page, opts = {}) {
   const doc = exports.open(pdf, opts)
   try {
     return doc.render(page, opts)
+  } finally {
+    doc.close()
+  }
+}
+
+exports.textPages = function* textPages(pdf, opts = {}) {
+  const doc = exports.open(pdf, opts)
+  try {
+    yield* doc.textPages()
   } finally {
     doc.close()
   }

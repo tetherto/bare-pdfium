@@ -42,6 +42,20 @@ function imagePdf() {
   ])
 }
 
+function twoPageTextPdf() {
+  const one = 'BT /F1 24 Tf 40 100 Td (Page One) Tj ET'
+  const two = 'BT /F1 24 Tf 40 100 Td (Page Two) Tj ET'
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 7 0 R >> >> >>',
+    `<< /Length ${one.length} >>\nstream\n${one}\nendstream`,
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>',
+    `<< /Length ${two.length} >>\nstream\n${two}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
 test('pageCount: one-shot and via a handle agree', (t) => {
   t.is(addon.pageCount(textPdf()), 1)
   const doc = addon.open(textPdf())
@@ -98,6 +112,23 @@ test('extractText rejects an out-of-range page', (t) => {
   const doc = addon.open(textPdf())
   t.exception(() => doc.extractText(5))
   doc.close()
+})
+
+test('textPages streams every page in order', (t) => {
+  const doc = addon.open(twoPageTextPdf())
+  const pages = [...doc.textPages()]
+  t.is(pages.length, 2)
+  t.is(pages[0].page, 0)
+  t.ok(pages[0].text.includes('Page One'), 'first page text')
+  t.is(pages[1].page, 1)
+  t.ok(pages[1].text.includes('Page Two'), 'second page text')
+  doc.close()
+})
+
+test('textPages one-shot opens and closes around the stream', (t) => {
+  const pages = [...addon.textPages(twoPageTextPdf())]
+  t.is(pages.length, 2)
+  t.ok(pages[1].text.includes('Page Two'), 'reaches the last page')
 })
 
 test('open accepts a password on an unencrypted PDF', (t) => {

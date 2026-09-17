@@ -28,6 +28,7 @@ doc.pageFlags(0)         // => { hasImage, hasText }
 doc.render(0, { scale: 2 })   // => { width, height, data }  RGBA, white background
 doc.extractImages(0)     // => [{ width, height, data }, ...]  the page's images
 doc.extractText(0)       // => string  the page's text layer ('' if none)
+doc.textPages()          // => iterator of { page, text }, one page at a time
 
 doc.close()              // always close it (idempotent)
 ```
@@ -41,6 +42,11 @@ doc.close()              // always close it (idempotent)
 - `extractText(page)` — the page's text layer as a string, empty for a page with
   no text layer (a scan). Independent of `render`, so a consumer can take both the
   pixels and the text from the same page.
+- `textPages()` — a generator over `{ page, text }` for every page, yielded one at
+  a time. It parses the document once (`open` already holds it) and never
+  accumulates: the consumer processes each page and drops it, so a large PDF costs
+  one page of text at a time, not the whole document. A one-shot
+  `pdfium.textPages(bytes)` opens and closes the doc around the stream.
 
 ### One-shot helpers
 

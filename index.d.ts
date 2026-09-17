@@ -29,6 +29,8 @@ export class Doc {
   extractImages(page: number): RasterImage[]
   /** the page's text layer as a string, empty when the page has none (a scan) */
   extractText(page: number): string
+  /** every page's text, yielded one at a time so nothing accumulates */
+  textPages(): IterableIterator<{ page: number; text: string }>
   close(): void
 }
 
@@ -43,3 +45,9 @@ export function render(
   page: number,
   opts?: { scale?: number; password?: string }
 ): RasterImage
+
+/** One-shot: open, stream every page's text, close when the iterator is done. */
+export function textPages(
+  pdf: Uint8Array,
+  opts?: OpenOptions
+): IterableIterator<{ page: number; text: string }>
