@@ -27,6 +27,8 @@ export class Doc {
   render(page: number, opts?: { scale?: number }): RasterImage
   /** the page's embedded raster images, each rendered to RGBA */
   extractImages(page: number): RasterImage[]
+  /** the page's text layer as a string, empty when the page has none (a scan) */
+  extractText(page: number): string
   close(): void
 }
 

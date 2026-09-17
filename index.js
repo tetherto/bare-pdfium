@@ -41,6 +41,10 @@ class Doc {
     }))
   }
 
+  extractText(page) {
+    return binding.extractText(this._handle, page)
+  }
+
   close() {
     if (this._handle) {
       binding.close(this._handle)

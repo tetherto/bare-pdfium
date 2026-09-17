@@ -82,6 +82,24 @@ test('pageFlags and extractImages find a page image', (t) => {
   doc.close()
 })
 
+test('extractText returns the page text layer', (t) => {
+  const doc = addon.open(textPdf())
+  t.ok(doc.extractText(0).includes('Hello PDF'), 'the drawn text is extracted')
+  doc.close()
+})
+
+test('extractText is empty for a page with no text layer', (t) => {
+  const doc = addon.open(imagePdf())
+  t.is(doc.extractText(0), '', 'an image-only page yields no text')
+  doc.close()
+})
+
+test('extractText rejects an out-of-range page', (t) => {
+  const doc = addon.open(textPdf())
+  t.exception(() => doc.extractText(5))
+  doc.close()
+})
+
 test('open accepts a password on an unencrypted PDF', (t) => {
   const doc = addon.open(textPdf(), { password: 'unused' })
   t.is(doc.pageCount(), 1)

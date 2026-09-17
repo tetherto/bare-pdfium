@@ -444,6 +444,58 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
 }
 
 static js_value_t *
+bare_pdfium_extract_text(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+
+  int64_t page_index;
+  err = js_get_value_int64(env, argv[1], &page_index);
+  assert(err == 0);
+
+  FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
+  if (page == NULL) {
+    err = js_throw_error(env, NULL, "failed to load page");
+    assert(err == 0);
+    return NULL;
+  }
+
+  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+  if (text_page == NULL) {
+    FPDF_ClosePage(page);
+    err = js_throw_error(env, NULL, "failed to load text page");
+    assert(err == 0);
+    return NULL;
+  }
+
+  int char_count = FPDFText_CountChars(text_page);
+
+  js_value_t *result;
+  if (char_count <= 0) {
+    err = js_create_string_utf8(env, (const utf8_t *) "", 0, &result);
+    assert(err == 0);
+  } else {
+    unsigned short *buffer = malloc((size_t) (char_count + 1) * sizeof(unsigned short));
+    int written = FPDFText_GetText(text_page, 0, char_count, buffer);
+    size_t units = written > 0 ? (size_t) (written - 1) : 0;
+    err = js_create_string_utf16le(env, (const utf16_t *) buffer, units, &result);
+    assert(err == 0);
+    free(buffer);
+  }
+
+  FPDFText_ClosePage(text_page);
+  FPDF_ClosePage(page);
+
+  return result;
+}
+
+static js_value_t *
 bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   int err;
 
@@ -463,6 +515,7 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("pageFlags", bare_pdfium_page_flags)
   V("render", bare_pdfium_render)
   V("extractImages", bare_pdfium_extract_images)
+  V("extractText", bare_pdfium_extract_text)
 #undef V
 
   return exports;
