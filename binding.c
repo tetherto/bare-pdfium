@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <utf.h>
@@ -31,6 +32,8 @@ static const int BARE_PDFIUM_MIN_IMAGE_PX = 8;
 typedef struct {
   FPDF_DOCUMENT doc;
   void *buf;
+  FILE *file;
+  FPDF_FILEACCESS access;
 } bare_pdfium_doc_t;
 
 static void
@@ -44,8 +47,34 @@ static void
 bare_pdfium__on_doc_finalize(js_env_t *env, void *data, void *finalize_hint) {
   bare_pdfium_doc_t *handle = (bare_pdfium_doc_t *) data;
   if (handle->doc) FPDF_CloseDocument(handle->doc);
+  if (handle->file) fclose(handle->file);
   free(handle->buf);
   free(handle);
+}
+
+static int64_t
+bare_pdfium__file_size(FILE *file) {
+#ifdef _WIN32
+  if (_fseeki64(file, 0, SEEK_END) != 0) return -1;
+  int64_t size = _ftelli64(file);
+  _fseeki64(file, 0, SEEK_SET);
+#else
+  if (fseeko(file, 0, SEEK_END) != 0) return -1;
+  off_t size = ftello(file);
+  fseeko(file, 0, SEEK_SET);
+#endif
+  return (int64_t) size;
+}
+
+static int
+bare_pdfium__get_block(void *param, unsigned long position, unsigned char *buf, unsigned long size) {
+  FILE *file = (FILE *) param;
+#ifdef _WIN32
+  if (_fseeki64(file, (int64_t) position, SEEK_SET) != 0) return 0;
+#else
+  if (fseeko(file, (off_t) position, SEEK_SET) != 0) return 0;
+#endif
+  return fread(buf, 1, size, file) == size ? 1 : 0;
 }
 
 static bare_pdfium_doc_t *
@@ -181,6 +210,80 @@ bare_pdfium_open(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium_doc_t *handle = malloc(sizeof(bare_pdfium_doc_t));
   handle->doc = doc;
   handle->buf = copy;
+  handle->file = NULL;
+
+  js_value_t *external;
+  err = js_create_external(env, handle, bare_pdfium__on_doc_finalize, NULL, &external);
+  assert(err == 0);
+
+  return external;
+}
+
+static js_value_t *
+bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  assert(argc == 2);
+
+  size_t path_len = 0;
+  err = js_get_value_string_utf8(env, argv[0], NULL, 0, &path_len);
+  assert(err == 0);
+  char *path = malloc(path_len + 1);
+  err = js_get_value_string_utf8(env, argv[0], (utf8_t *) path, path_len + 1, &path_len);
+  assert(err == 0);
+  path[path_len] = '\0';
+
+  char password[256];
+  size_t password_len = 0;
+  err = js_get_value_string_utf8(
+    env, argv[1], (utf8_t *) password, sizeof(password), &password_len
+  );
+  assert(err == 0);
+  password[password_len < sizeof(password) ? password_len : sizeof(password) - 1] = '\0';
+
+  FILE *file = fopen(path, "rb");
+  free(path);
+  if (file == NULL) {
+    err = js_throw_error(env, NULL, "failed to open file");
+    assert(err == 0);
+    return NULL;
+  }
+
+  int64_t size = bare_pdfium__file_size(file);
+  if (size < 0) {
+    fclose(file);
+    err = js_throw_error(env, NULL, "failed to size file");
+    assert(err == 0);
+    return NULL;
+  }
+
+  bare_pdfium__ensure_init();
+
+  bare_pdfium_doc_t *handle = malloc(sizeof(bare_pdfium_doc_t));
+  handle->doc = NULL;
+  handle->buf = NULL;
+  handle->file = file;
+  handle->access.m_FileLen = (unsigned long) size;
+  handle->access.m_GetBlock = bare_pdfium__get_block;
+  handle->access.m_Param = file;
+
+  handle->doc = FPDF_LoadCustomDocument(&handle->access, password_len ? password : NULL);
+  if (handle->doc == NULL) {
+    fclose(file);
+    free(handle);
+    unsigned long code = FPDF_GetLastError();
+    const char *message =
+      code == FPDF_ERR_PASSWORD ? "password required or incorrect" : "failed to load PDF";
+    err = js_throw_error(env, NULL, message);
+    assert(err == 0);
+    return NULL;
+  }
 
   js_value_t *external;
   err = js_create_external(env, handle, bare_pdfium__on_doc_finalize, NULL, &external);
@@ -204,6 +307,10 @@ bare_pdfium_close(js_env_t *env, js_callback_info_t *info) {
   if (handle->doc) {
     FPDF_CloseDocument(handle->doc);
     handle->doc = NULL;
+  }
+  if (handle->file) {
+    fclose(handle->file);
+    handle->file = NULL;
   }
   free(handle->buf);
   handle->buf = NULL;
@@ -509,6 +616,7 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   }
 
   V("open", bare_pdfium_open)
+  V("openFile", bare_pdfium_open_file)
   V("close", bare_pdfium_close)
   V("pageCount", bare_pdfium_page_count)
   V("pageSize", bare_pdfium_page_size)

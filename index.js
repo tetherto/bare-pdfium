@@ -65,6 +65,10 @@ exports.open = function open(pdf, opts = {}) {
   return new Doc(binding.open(pdf, opts.password ?? ''))
 }
 
+exports.openFile = function openFile(path, opts = {}) {
+  return new Doc(binding.openFile(path, opts.password ?? ''))
+}
+
 exports.Doc = Doc
 
 // One-shot helpers for a single operation — they open and close a Doc for you.

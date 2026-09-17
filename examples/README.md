@@ -18,18 +18,22 @@ files and no setup.
 
 ## Using your own PDF
 
-The addon takes the file bytes as a `Buffer`/`Uint8Array`. Read them however your
-runtime does — under Bare that is `bare-fs`:
+Point `openFile` at a path — PDFium reads pages from disk on demand, so a large
+file never sits fully in memory:
 
 ```js
-const fs = require('bare-fs')
 const pdfium = require('bare-pdfium')
 
-const bytes = fs.readFileSync('document.pdf')
-for (const { page, text } of pdfium.textPages(bytes)) {
-  console.log(`page ${page}:`, text)
+const doc = pdfium.openFile('document.pdf')
+try {
+  for (const { page, text } of doc.textPages()) {
+    console.log(`page ${page}:`, text)
+  }
+} finally {
+  doc.close()
 }
 ```
 
-Pass `{ password: '...' }` to `open`/`textPages`/the one-shots to unlock an
-encrypted PDF.
+If you already have the bytes, pass them to `open` (or the one-shot
+`pdfium.textPages(bytes)`) instead. Pass `{ password: '...' }` to any of the
+openers to unlock an encrypted PDF.

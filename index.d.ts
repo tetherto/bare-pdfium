@@ -36,6 +36,9 @@ export class Doc {
 
 export function open(pdf: Uint8Array, opts?: OpenOptions): Doc
 
+/** Open a PDF by path; PDFium reads it from disk on demand instead of holding the whole file in memory. */
+export function openFile(path: string, opts?: OpenOptions): Doc
+
 /** One-shot: open, count, close. */
 export function pageCount(pdf: Uint8Array, opts?: OpenOptions): number
 

@@ -1,4 +1,6 @@
 const test = require('brittle')
+const fs = require('bare-fs')
+const os = require('bare-os')
 const addon = require('.')
 
 // Assemble a PDF from object bodies with a correct xref, so no binary fixture
@@ -129,6 +131,24 @@ test('textPages one-shot opens and closes around the stream', (t) => {
   const pages = [...addon.textPages(twoPageTextPdf())]
   t.is(pages.length, 2)
   t.ok(pages[1].text.includes('Page Two'), 'reaches the last page')
+})
+
+test('openFile reads a PDF from disk on demand', (t) => {
+  const file = `${os.tmpdir()}/bare-pdfium-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`
+  fs.writeFileSync(file, twoPageTextPdf())
+  try {
+    const doc = addon.openFile(file)
+    t.is(doc.pageCount(), 2, 'reads the page count')
+    t.ok(doc.extractText(0).includes('Page One'), 'reads page text')
+    t.is([...doc.textPages()].length, 2, 'streams both pages')
+    doc.close()
+  } finally {
+    fs.unlinkSync(file)
+  }
+})
+
+test('openFile throws on a missing path', (t) => {
+  t.exception(() => addon.openFile(`${os.tmpdir()}/bare-pdfium-does-not-exist.pdf`))
 })
 
 test('open accepts a password on an unencrypted PDF', (t) => {

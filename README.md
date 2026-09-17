@@ -20,7 +20,8 @@ const bytes = await fs.promises.readFile('doc.pdf') // Buffer / Uint8Array
 ### Handle (parse once)
 
 ```js
-const doc = pdfium.open(bytes, { password: '' }) // password optional
+const doc = pdfium.open(bytes, { password: '' })  // from bytes
+// or pdfium.openFile('doc.pdf')                  // from disk, read on demand
 
 doc.pageCount()          // => number
 doc.pageSize(0)          // => { width, height } in PDF points (1/72"), no render
@@ -33,6 +34,10 @@ doc.textPages()          // => iterator of { page, text }, one page at a time
 doc.close()              // always close it (idempotent)
 ```
 
+- `open(bytes)` vs `openFile(path)` — `open` copies the whole file into memory and
+  holds it for the document's life; `openFile` hands PDFium a read callback so it
+  pulls pages from disk on demand, which keeps a large PDF from sitting in memory
+  twice. The returned handle is identical either way.
 - `pageFlags(page)` — `hasImage` is true when the page has an image covering more
   than ~5% of it (decoration is ignored); `hasText` is false for a scanned page.
 - `render(page, { scale })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
