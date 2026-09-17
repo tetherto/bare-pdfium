@@ -27,6 +27,7 @@ doc.pageSize(0)          // => { width, height } in PDF points (1/72"), no rende
 doc.pageFlags(0)         // => { hasImage, hasText }
 doc.render(0, { scale: 2 })   // => { width, height, data }  RGBA, white background
 doc.extractImages(0)     // => [{ width, height, data }, ...]  the page's images
+doc.extractText(0)       // => string  the page's text layer ('' if none)
 
 doc.close()              // always close it (idempotent)
 ```
@@ -37,6 +38,9 @@ doc.close()              // always close it (idempotent)
   is 150 DPI. `data` is a row-major RGBA buffer, `width*height*4` bytes.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
   with their transforms), each RGBA. Images under 8px are skipped.
+- `extractText(page)` — the page's text layer as a string, empty for a page with
+  no text layer (a scan). Independent of `render`, so a consumer can take both the
+  pixels and the text from the same page.
 
 ### One-shot helpers
 
