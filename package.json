@@ -1,6 +1,6 @@
 {
   "name": "bare-pdfium",
-  "version": "1.4.0-next.0",
+  "version": "1.4.0",
   "description": "PDF page rasterization for Bare, backed by PDFium",
   "publishConfig": {
     "access": "public"
