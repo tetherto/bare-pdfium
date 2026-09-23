@@ -191,7 +191,11 @@ built `.bare`, where the module's rpath resolves it.
 (linux x64/arm64, android arm64/arm/x64, darwin x64/arm64, ios arm64 +
 simulators, win32 x64/arm64) via the holepunch `compile-prebuilds` actions, then
 merges them. Run it from the Actions tab (`workflow_dispatch`).
-`.github/workflows/publish.yml` builds the same set and publishes it to npm.
+`.github/workflows/publish.yml` runs when a `v*` tag is pushed: it builds the same
+set and publishes it to npm through trusted publishing (no npm token), then
+creates a GitHub release. Tag the commit whose `package.json` has that version. A
+tag newer than npm's current `latest` publishes as `latest`; an older one
+publishes as `release-<major>.<minor>`.
 `android-ia32` is omitted because pdfium-binaries publishes no `android-x86`
 build.
 
