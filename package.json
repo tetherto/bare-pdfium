@@ -20,7 +20,8 @@
     "binding.js",
     "CMakeLists.txt",
     "cmake",
-    "prebuilds"
+    "prebuilds",
+    "NOTICE.md"
   ],
   "addon": true,
   "scripts": {
@@ -30,10 +31,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tetherto/bare-pdfium.git"
+    "url": "https://github.com/tetherto/bare-pdfium.git"
   },
-  "author": "moromisato",
+  "author": "Tether Inc",
   "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/tetherto/bare-pdfium/issues"
+  },
+  "homepage": "https://github.com/tetherto/bare-pdfium",
   "prettier": "prettier-config-holepunch",
   "devDependencies": {
     "brittle": "^3.4.0",

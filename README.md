@@ -203,7 +203,7 @@ build.
 
 This wrapper is Apache-2.0. The bundled PDFium (shipped in `prebuilds/`) is
 BSD-3-Clause (© The PDFium Authors); the binaries come from bblanchon/pdfium-
-binaries (MIT) and embed further permissive components. See `NOTICE` — a shipping
+binaries (MIT) and embed further permissive components. See `NOTICE.md` — a shipping
 application must carry these attributions.
 
 ## Why not pdf.js?
