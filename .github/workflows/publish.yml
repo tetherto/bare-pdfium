@@ -1,8 +1,11 @@
 name: Publish
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - v*
 permissions:
-  contents: read
+  id-token: write
+  contents: write
 jobs:
   prebuild:
     strategy:
@@ -65,18 +68,23 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     needs: prebuild
-    permissions:
-      contents: read
+    environment:
+      name: npm
     name: Publish
     steps:
       - uses: holepunchto/actions/node-base@v1
-        with:
-          registry-url: https://registry.npmjs.org
-          node-auth-token: ${{ secrets.NPM_TOKEN }}
       - uses: holepunchto/actions/download-prebuilds@v1
-      - run: |
-          TAG=$(node -p "require('./package.json').version.includes('-') ? 'next' : 'latest'")
-          echo "publishing with dist-tag $TAG"
-          npm publish --ignore-scripts --access public --tag "$TAG"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - id: disttag
+        run: |
+          pushed="${GITHUB_REF_NAME#v}"
+          name="$(node -p 'require("./package.json").name')"
+          current="$(npm view "$name@latest" version 2>/dev/null || echo 0.0.0)"
+          newest="$(printf '%s\n%s\n' "$current" "$pushed" | sort -V | tail -1)"
+          if [ "$newest" = "$pushed" ]; then
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=release-${pushed%.*}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: holepunchto/actions/publish@v1
+        with:
+          tag: ${{ steps.disttag.outputs.tag }}
