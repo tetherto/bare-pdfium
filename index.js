@@ -1,5 +1,31 @@
 const binding = require('./binding')
 
+let pending = Promise.resolve()
+
+function serialize(job) {
+  const result = pending.then(job)
+  pending = result.catch(() => {})
+  return result
+}
+
+function textOptions(opts) {
+  const { clip = false, hyphens = 'join' } = opts
+  if (hyphens !== 'join' && hyphens !== 'keep' && hyphens !== 'raw') {
+    throw new TypeError(`hyphens must be 'join', 'keep' or 'raw', got '${hyphens}'`)
+  }
+  return { clip: clip === true, hyphens }
+}
+
+function applyHyphens(text, hyphens) {
+  if (hyphens === 'join') return text.replaceAll('\uFFFE', '')
+  if (hyphens === 'keep') return text.replaceAll('\uFFFE', '-')
+  return text
+}
+
+function closedError() {
+  return Promise.reject(new Error('document is closed'))
+}
+
 // An open PDF. Loading parses the whole file once; every page operation reuses
 // that, so batch work (classify then render a few pages) goes through here
 // rather than the one-shot helpers below. Always close() it.
@@ -41,14 +67,45 @@ class Doc {
     }))
   }
 
-  extractText(page) {
-    return binding.extractText(this._handle, page)
+  renderAsync(page, opts = {}) {
+    const { scale = 1 } = opts
+    const handle = this._handle
+    if (!handle) return closedError()
+    return serialize(() => binding.renderAsync(handle, page, scale)).then(
+      ({ width, height, data }) => ({ width, height, data: Buffer.from(data) })
+    )
   }
 
-  *textPages() {
+  extractText(page, opts = {}) {
+    const { clip, hyphens } = textOptions(opts)
+    return applyHyphens(binding.extractText(this._handle, page, clip), hyphens)
+  }
+
+  extractTextAsync(page, opts = {}) {
+    let options
+    try {
+      options = textOptions(opts)
+    } catch (err) {
+      return Promise.reject(err)
+    }
+    const handle = this._handle
+    if (!handle) return closedError()
+    return serialize(() => binding.extractTextAsync(handle, page, options.clip)).then((text) =>
+      applyHyphens(text, options.hyphens)
+    )
+  }
+
+  *textPages(opts = {}) {
     const count = this.pageCount()
     for (let page = 0; page < count; page++) {
-      yield { page, text: this.extractText(page) }
+      yield { page, text: this.extractText(page, opts) }
+    }
+  }
+
+  async *textPagesAsync(opts = {}) {
+    const count = this.pageCount()
+    for (let page = 0; page < count; page++) {
+      yield { page, text: await this.extractTextAsync(page, opts) }
     }
   }
 
@@ -93,7 +150,7 @@ exports.render = function render(pdf, page, opts = {}) {
 exports.textPages = function* textPages(pdf, opts = {}) {
   const doc = exports.open(pdf, opts)
   try {
-    yield* doc.textPages()
+    yield* doc.textPages(opts)
   } finally {
     doc.close()
   }

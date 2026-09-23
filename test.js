@@ -5,7 +5,7 @@ const addon = require('.')
 
 // Assemble a PDF from object bodies with a correct xref, so no binary fixture
 // has to be checked in. Latin1 keeps every byte 1:1 for the offset math.
-function buildPdf(bodies) {
+function buildPdf(bodies, trailer = '') {
   let pdf = '%PDF-1.4\n'
   const offsets = []
   bodies.forEach((body, i) => {
@@ -15,7 +15,7 @@ function buildPdf(bodies) {
   const xrefStart = pdf.length
   pdf += `xref\n0 ${bodies.length + 1}\n0000000000 65535 f \n`
   for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`
-  pdf += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`
+  pdf += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R ${trailer}>>\nstartxref\n${xrefStart}\n%%EOF`
   return Buffer.from(pdf, 'latin1')
 }
 
@@ -56,6 +56,41 @@ function twoPageTextPdf() {
     `<< /Length ${two.length} >>\nstream\n${two}\nendstream`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
   ])
+}
+
+function hyphenPdf() {
+  const content = 'BT /F1 12 Tf 20 150 Td (the infer-) Tj 0 -14 Td (ence book) Tj ET'
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
+function offPagePdf() {
+  const content = 'BT /F1 12 Tf 20 100 Td (inside) Tj ET BT /F1 12 Tf 300 50 Td (outside) Tj ET'
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
+function encryptedPdf() {
+  const hash = '<' + 'ab'.repeat(32) + '>'
+  return buildPdf(
+    [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>',
+      `<< /Filter /Standard /V 1 /R 2 /O ${hash} /U ${hash} /P -4 >>`
+    ],
+    `/Encrypt 4 0 R /ID [<00112233445566778899aabbccddeeff> <00112233445566778899aabbccddeeff>] `
+  )
 }
 
 test('pageCount: one-shot and via a handle agree', (t) => {
@@ -166,4 +201,129 @@ test('close is idempotent', (t) => {
 
 test('render rejects an out-of-range page', (t) => {
   t.exception(() => addon.render(textPdf(), 5, { scale: 1 }))
+})
+
+test('extractText joins a word hyphenated across a line break by default', (t) => {
+  const doc = addon.open(hyphenPdf())
+  const text = doc.extractText(0)
+  t.ok(text.includes('inference'), 'the word is rejoined')
+  t.absent(text.includes('\uFFFE'), 'no U+FFFE marker is left')
+  doc.close()
+})
+
+test('extractText hyphens option keeps or passes through the marker', (t) => {
+  const doc = addon.open(hyphenPdf())
+  t.ok(doc.extractText(0, { hyphens: 'keep' }).includes('infer-ence'), 'keep restores the hyphen')
+  t.ok(doc.extractText(0, { hyphens: 'raw' }).includes('infer\uFFFEence'), 'raw is untouched')
+  t.exception.all(() => doc.extractText(0, { hyphens: 'nope' }), /hyphens must be/)
+  doc.close()
+})
+
+test('extractText clip drops text outside the page box', (t) => {
+  const doc = addon.open(offPagePdf())
+  t.ok(doc.extractText(0).includes('outside'), 'unclipped text includes off-page text')
+  const clipped = doc.extractText(0, { clip: true })
+  t.ok(clipped.includes('inside'), 'on-page text is kept')
+  t.absent(clipped.includes('outside'), 'off-page text is dropped')
+  doc.close()
+})
+
+test('extractText clip is empty for a page with no text layer', (t) => {
+  const doc = addon.open(imagePdf())
+  t.is(doc.extractText(0, { clip: true }), '')
+  doc.close()
+})
+
+test('open reports FORMAT for bytes that are not a PDF', (t) => {
+  try {
+    addon.open(Buffer.from('not a pdf'))
+    t.fail('should throw')
+  } catch (err) {
+    t.is(err.code, 'FORMAT')
+  }
+})
+
+test('open reports PASSWORD for an encrypted PDF without its password', (t) => {
+  try {
+    addon.open(encryptedPdf())
+    t.fail('should throw')
+  } catch (err) {
+    t.is(err.code, 'PASSWORD')
+  }
+})
+
+test('openFile reports FILE for a missing path', (t) => {
+  try {
+    addon.openFile(`${os.tmpdir()}/bare-pdfium-does-not-exist.pdf`)
+    t.fail('should throw')
+  } catch (err) {
+    t.is(err.code, 'FILE')
+  }
+})
+
+test('extractTextAsync matches extractText', async (t) => {
+  const doc = addon.open(hyphenPdf())
+  t.is(await doc.extractTextAsync(0), doc.extractText(0))
+  t.is(await doc.extractTextAsync(0, { hyphens: 'raw' }), doc.extractText(0, { hyphens: 'raw' }))
+  doc.close()
+})
+
+test('extractTextAsync with clip drops off-page text', async (t) => {
+  const doc = addon.open(offPagePdf())
+  t.absent((await doc.extractTextAsync(0, { clip: true })).includes('outside'))
+  doc.close()
+})
+
+test('renderAsync matches render', async (t) => {
+  const doc = addon.open(textPdf())
+  const expected = doc.render(0, { scale: 2 })
+  const actual = await doc.renderAsync(0, { scale: 2 })
+  t.is(actual.width, expected.width)
+  t.is(actual.height, expected.height)
+  t.ok(Buffer.compare(actual.data, expected.data) === 0, 'same pixels')
+  doc.close()
+})
+
+test('async calls reject on an out-of-range page', async (t) => {
+  const doc = addon.open(textPdf())
+  await t.exception(doc.extractTextAsync(5))
+  await t.exception(doc.renderAsync(5))
+  doc.close()
+})
+
+test('async calls interleave with sync calls and other documents', async (t) => {
+  const one = addon.open(twoPageTextPdf())
+  const two = addon.open(textPdf())
+  const jobs = []
+  for (let i = 0; i < 20; i++) {
+    jobs.push(one.extractTextAsync(i % 2), two.renderAsync(0), two.extractTextAsync(0))
+    t.ok(one.extractText(1).includes('Page Two'))
+  }
+  const results = await Promise.all(jobs)
+  t.ok(results[0].includes('Page One'))
+  t.ok(results[3].includes('Page Two'))
+  t.is(results[1].width, 200)
+  t.ok(results[2].includes('Hello PDF'))
+  one.close()
+  two.close()
+})
+
+test('async calls queued before close reject instead of crashing', async (t) => {
+  const doc = addon.open(textPdf())
+  const text = doc.extractTextAsync(0)
+  const image = doc.renderAsync(0)
+  doc.close()
+  await t.exception(text, /document is closed/)
+  await t.exception(image, /document is closed/)
+  await t.exception(doc.extractTextAsync(0), /document is closed/)
+})
+
+test('textPagesAsync streams every page in order', async (t) => {
+  const doc = addon.open(twoPageTextPdf())
+  const pages = []
+  for await (const page of doc.textPagesAsync()) pages.push(page)
+  t.is(pages.length, 2)
+  t.ok(pages[0].text.includes('Page One'))
+  t.ok(pages[1].text.includes('Page Two'))
+  doc.close()
 })

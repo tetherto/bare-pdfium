@@ -11,11 +11,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <utf.h>
+#include <uv.h>
 
-// PDFium is not thread-safe and wants a single process-lifetime init. Bare addon
-// calls run on the JS thread, so a lazy guarded init is enough; there is no
-// matching destroy — the library lives for the life of the process.
+// PDFium is not thread-safe and wants a single process-lifetime init; there is
+// no matching destroy — the library lives for the life of the process.
 static bool bare_pdfium_initialized = false;
+
+static uv_once_t bare_pdfium_lock_once = UV_ONCE_INIT;
+static uv_mutex_t bare_pdfium_lock_mutex;
 
 // Rendering a page at an absurd scale would allocate gigabytes; cap each side.
 static const int BARE_PDFIUM_MAX_DIM = 20000;
@@ -36,6 +39,40 @@ typedef struct {
   FPDF_FILEACCESS access;
 } bare_pdfium_doc_t;
 
+typedef struct {
+  uv_work_t req;
+  js_env_t *env;
+  js_deferred_t *deferred;
+  js_ref_t *ref;
+  bare_pdfium_doc_t *handle;
+  int page_index;
+  bool clip;
+  double scale;
+  const char *error;
+  unsigned short *text;
+  size_t units;
+  int width;
+  int height;
+  uint8_t *rgba;
+} bare_pdfium_job_t;
+
+static void
+bare_pdfium__init_lock(void) {
+  int err = uv_mutex_init(&bare_pdfium_lock_mutex);
+  assert(err == 0);
+}
+
+static void
+bare_pdfium__lock(void) {
+  uv_once(&bare_pdfium_lock_once, bare_pdfium__init_lock);
+  uv_mutex_lock(&bare_pdfium_lock_mutex);
+}
+
+static void
+bare_pdfium__unlock(void) {
+  uv_mutex_unlock(&bare_pdfium_lock_mutex);
+}
+
 static void
 bare_pdfium__ensure_init(void) {
   if (bare_pdfium_initialized) return;
@@ -46,7 +83,9 @@ bare_pdfium__ensure_init(void) {
 static void
 bare_pdfium__on_doc_finalize(js_env_t *env, void *data, void *finalize_hint) {
   bare_pdfium_doc_t *handle = (bare_pdfium_doc_t *) data;
+  bare_pdfium__lock();
   if (handle->doc) FPDF_CloseDocument(handle->doc);
+  bare_pdfium__unlock();
   if (handle->file) fclose(handle->file);
   free(handle->buf);
   free(handle);
@@ -108,29 +147,13 @@ bare_pdfium__set_bool(js_env_t *env, js_value_t *object, const char *name, bool 
 // Copy any PDFium bitmap (BGRA/BGRx/BGR/Gray) into a { width, height, data }
 // object whose data is a fresh RGBA arraybuffer. Shared by render and
 // extractImages so both speak the same RGBA the image pipeline expects.
-static js_value_t *
-bare_pdfium__bitmap_result(js_env_t *env, FPDF_BITMAP bitmap) {
-  int err;
-
+static void
+bare_pdfium__bitmap_rgba(FPDF_BITMAP bitmap, uint8_t *data) {
   int width = FPDFBitmap_GetWidth(bitmap);
   int height = FPDFBitmap_GetHeight(bitmap);
   int stride = FPDFBitmap_GetStride(bitmap);
   int format = FPDFBitmap_GetFormat(bitmap);
   const uint8_t *pixels = (const uint8_t *) FPDFBitmap_GetBuffer(bitmap);
-
-  js_value_t *result;
-  err = js_create_object(env, &result);
-  assert(err == 0);
-
-  bare_pdfium__set_int(env, result, "width", width);
-  bare_pdfium__set_int(env, result, "height", height);
-
-  size_t out_len = (size_t) width * (size_t) height * 4;
-
-  js_value_t *buffer;
-  uint8_t *data;
-  err = js_create_unsafe_arraybuffer(env, out_len, (void **) &data, &buffer);
-  assert(err == 0);
 
   for (int y = 0; y < height; y++) {
     const uint8_t *src = pixels + (size_t) y * stride;
@@ -157,10 +180,166 @@ bare_pdfium__bitmap_result(js_env_t *env, FPDF_BITMAP bitmap) {
       dst[x * 4 + 0] = r, dst[x * 4 + 1] = g, dst[x * 4 + 2] = b, dst[x * 4 + 3] = a;
     }
   }
+}
+
+static js_value_t *
+bare_pdfium__rgba_result(js_env_t *env, int width, int height, const uint8_t *rgba) {
+  int err;
+
+  js_value_t *result;
+  err = js_create_object(env, &result);
+  assert(err == 0);
+
+  bare_pdfium__set_int(env, result, "width", width);
+  bare_pdfium__set_int(env, result, "height", height);
+
+  js_value_t *buffer;
+  uint8_t *data;
+  err = js_create_unsafe_arraybuffer(env, (size_t) width * (size_t) height * 4, (void **) &data, &buffer);
+  assert(err == 0);
+  memcpy(data, rgba, (size_t) width * (size_t) height * 4);
 
   err = js_set_named_property(env, result, "data", buffer);
   assert(err == 0);
 
+  return result;
+}
+
+// Copy any PDFium bitmap (BGRA/BGRx/BGR/Gray) into a { width, height, data }
+// object whose data is a fresh RGBA arraybuffer. Shared by render and
+// extractImages so both speak the same RGBA the image pipeline expects.
+static js_value_t *
+bare_pdfium__bitmap_result(js_env_t *env, FPDF_BITMAP bitmap) {
+  int err;
+
+  int width = FPDFBitmap_GetWidth(bitmap);
+  int height = FPDFBitmap_GetHeight(bitmap);
+
+  js_value_t *result;
+  err = js_create_object(env, &result);
+  assert(err == 0);
+
+  bare_pdfium__set_int(env, result, "width", width);
+  bare_pdfium__set_int(env, result, "height", height);
+
+  js_value_t *buffer;
+  uint8_t *data;
+  err = js_create_unsafe_arraybuffer(env, (size_t) width * (size_t) height * 4, (void **) &data, &buffer);
+  assert(err == 0);
+
+  bare_pdfium__bitmap_rgba(bitmap, data);
+
+  err = js_set_named_property(env, result, "data", buffer);
+  assert(err == 0);
+
+  return result;
+}
+
+static void
+bare_pdfium__throw_load_error(js_env_t *env, unsigned long code) {
+  const char *name;
+  const char *message;
+  switch (code) {
+  case FPDF_ERR_FILE:
+    name = "FILE", message = "failed to load PDF: file not found or could not be opened";
+    break;
+  case FPDF_ERR_FORMAT:
+    name = "FORMAT", message = "failed to load PDF: not a PDF or corrupted";
+    break;
+  case FPDF_ERR_PASSWORD:
+    name = "PASSWORD", message = "password required or incorrect";
+    break;
+  case FPDF_ERR_SECURITY:
+    name = "SECURITY", message = "failed to load PDF: unsupported security scheme";
+    break;
+  case FPDF_ERR_PAGE:
+    name = "PAGE", message = "failed to load PDF: page not found or content error";
+    break;
+  default:
+    name = "UNKNOWN", message = "failed to load PDF";
+    break;
+  }
+  int err = js_throw_error(env, name, message);
+  assert(err == 0);
+}
+
+static const char *
+bare_pdfium__render_bitmap(FPDF_DOCUMENT doc, int page_index, double scale, FPDF_BITMAP *result) {
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (page == NULL) return "failed to load page";
+
+  // PDF user-space units are points (1/72"); scale maps them to device pixels.
+  int width = (int) lround(FPDF_GetPageWidth(page) * scale);
+  int height = (int) lround(FPDF_GetPageHeight(page) * scale);
+  if (width < 1) width = 1;
+  if (height < 1) height = 1;
+
+  if (width > BARE_PDFIUM_MAX_DIM || height > BARE_PDFIUM_MAX_DIM) {
+    FPDF_ClosePage(page);
+    return "rendered dimensions exceed limit";
+  }
+
+  FPDF_BITMAP bitmap = FPDFBitmap_Create(width, height, 1);
+  if (bitmap == NULL) {
+    FPDF_ClosePage(page);
+    return "failed to allocate bitmap";
+  }
+
+  // Paint white first: a page with no background renders onto transparency,
+  // and a vision model reads a transparent PNG as a black rectangle.
+  FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
+  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT);
+
+  FPDF_ClosePage(page);
+
+  *result = bitmap;
+  return NULL;
+}
+
+static const char *
+bare_pdfium__page_text(FPDF_DOCUMENT doc, int page_index, bool clip, unsigned short **text, size_t *units) {
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (page == NULL) return "failed to load page";
+
+  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+  if (text_page == NULL) {
+    FPDF_ClosePage(page);
+    return "failed to load text page";
+  }
+
+  *text = NULL;
+  *units = 0;
+
+  FS_RECTF box;
+  if (clip && FPDF_GetPageBoundingBox(page, &box)) {
+    int count = FPDFText_GetBoundedText(text_page, box.left, box.top, box.right, box.bottom, NULL, 0);
+    if (count > 0) {
+      *text = malloc((size_t) (count + 1) * sizeof(unsigned short));
+      int written = FPDFText_GetBoundedText(text_page, box.left, box.top, box.right, box.bottom, *text, count + 1);
+      *units = written > count ? (size_t) count : (size_t) (written > 0 ? written : 0);
+    }
+  } else {
+    int char_count = FPDFText_CountChars(text_page);
+    if (char_count > 0) {
+      *text = malloc((size_t) (char_count + 1) * sizeof(unsigned short));
+      int written = FPDFText_GetText(text_page, 0, char_count, *text);
+      *units = written > 0 ? (size_t) (written - 1) : 0;
+    }
+  }
+
+  FPDFText_ClosePage(text_page);
+  FPDF_ClosePage(page);
+
+  return NULL;
+}
+
+static js_value_t *
+bare_pdfium__text_result(js_env_t *env, const unsigned short *text, size_t units) {
+  js_value_t *result;
+  int err = units
+    ? js_create_string_utf16le(env, (const utf16_t *) text, units, &result)
+    : js_create_string_utf8(env, (const utf8_t *) "", 0, &result);
+  assert(err == 0);
   return result;
 }
 
@@ -190,20 +369,19 @@ bare_pdfium_open(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
   password[password_len < sizeof(password) ? password_len : sizeof(password) - 1] = '\0';
 
-  bare_pdfium__ensure_init();
-
   void *copy = malloc(len == 0 ? 1 : len);
   memcpy(copy, pdf, len);
 
+  bare_pdfium__lock();
+  bare_pdfium__ensure_init();
   FPDF_DOCUMENT doc =
     FPDF_LoadMemDocument(copy, (int) len, password_len ? password : NULL);
+  unsigned long code = doc == NULL ? FPDF_GetLastError() : FPDF_ERR_SUCCESS;
+  bare_pdfium__unlock();
+
   if (doc == NULL) {
     free(copy);
-    unsigned long code = FPDF_GetLastError();
-    const char *message =
-      code == FPDF_ERR_PASSWORD ? "password required or incorrect" : "failed to load PDF";
-    err = js_throw_error(env, NULL, message);
-    assert(err == 0);
+    bare_pdfium__throw_load_error(env, code);
     return NULL;
   }
 
@@ -250,7 +428,7 @@ bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
   FILE *file = fopen(path, "rb");
   free(path);
   if (file == NULL) {
-    err = js_throw_error(env, NULL, "failed to open file");
+    err = js_throw_error(env, "FILE", "failed to open file");
     assert(err == 0);
     return NULL;
   }
@@ -258,12 +436,10 @@ bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
   int64_t size = bare_pdfium__file_size(file);
   if (size < 0) {
     fclose(file);
-    err = js_throw_error(env, NULL, "failed to size file");
+    err = js_throw_error(env, "FILE", "failed to size file");
     assert(err == 0);
     return NULL;
   }
-
-  bare_pdfium__ensure_init();
 
   bare_pdfium_doc_t *handle = malloc(sizeof(bare_pdfium_doc_t));
   handle->doc = NULL;
@@ -273,15 +449,16 @@ bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
   handle->access.m_GetBlock = bare_pdfium__get_block;
   handle->access.m_Param = file;
 
+  bare_pdfium__lock();
+  bare_pdfium__ensure_init();
   handle->doc = FPDF_LoadCustomDocument(&handle->access, password_len ? password : NULL);
+  unsigned long code = handle->doc == NULL ? FPDF_GetLastError() : FPDF_ERR_SUCCESS;
+  bare_pdfium__unlock();
+
   if (handle->doc == NULL) {
     fclose(file);
     free(handle);
-    unsigned long code = FPDF_GetLastError();
-    const char *message =
-      code == FPDF_ERR_PASSWORD ? "password required or incorrect" : "failed to load PDF";
-    err = js_throw_error(env, NULL, message);
-    assert(err == 0);
+    bare_pdfium__throw_load_error(env, code);
     return NULL;
   }
 
@@ -304,10 +481,12 @@ bare_pdfium_close(js_env_t *env, js_callback_info_t *info) {
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
   // idempotent: the finalizer frees the struct, so null the fields it would touch
+  bare_pdfium__lock();
   if (handle->doc) {
     FPDF_CloseDocument(handle->doc);
     handle->doc = NULL;
   }
+  bare_pdfium__unlock();
   if (handle->file) {
     fclose(handle->file);
     handle->file = NULL;
@@ -330,8 +509,12 @@ bare_pdfium_page_count(js_env_t *env, js_callback_info_t *info) {
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
 
+  bare_pdfium__lock();
+  int count = FPDF_GetPageCount(handle->doc);
+  bare_pdfium__unlock();
+
   js_value_t *result;
-  err = js_create_int64(env, FPDF_GetPageCount(handle->doc), &result);
+  err = js_create_int64(env, count, &result);
   assert(err == 0);
 
   return result;
@@ -354,7 +537,10 @@ bare_pdfium_page_size(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   FS_SIZEF size;
-  if (!FPDF_GetPageSizeByIndexF(handle->doc, (int) page_index, &size)) {
+  bare_pdfium__lock();
+  bool found = FPDF_GetPageSizeByIndexF(handle->doc, (int) page_index, &size);
+  bare_pdfium__unlock();
+  if (!found) {
     err = js_throw_error(env, NULL, "page index out of range");
     assert(err == 0);
     return NULL;
@@ -395,8 +581,11 @@ bare_pdfium_page_flags(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_int64(env, argv[1], &page_index);
   assert(err == 0);
 
+  bare_pdfium__lock();
+
   FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
   if (page == NULL) {
+    bare_pdfium__unlock();
     err = js_throw_error(env, NULL, "failed to load page");
     assert(err == 0);
     return NULL;
@@ -425,6 +614,8 @@ bare_pdfium_page_flags(js_env_t *env, js_callback_info_t *info) {
   }
 
   FPDF_ClosePage(page);
+
+  bare_pdfium__unlock();
 
   js_value_t *result;
   err = js_create_object(env, &result);
@@ -455,43 +646,22 @@ bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_double(env, argv[2], &scale);
   assert(err == 0);
 
-  FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
-  if (page == NULL) {
-    err = js_throw_error(env, NULL, "failed to load page");
+  bare_pdfium__lock();
+
+  FPDF_BITMAP bitmap;
+  const char *error = bare_pdfium__render_bitmap(handle->doc, (int) page_index, scale, &bitmap);
+  if (error) {
+    bare_pdfium__unlock();
+    err = js_throw_error(env, NULL, error);
     assert(err == 0);
     return NULL;
   }
-
-  // PDF user-space units are points (1/72"); scale maps them to device pixels.
-  int width = (int) lround(FPDF_GetPageWidth(page) * scale);
-  int height = (int) lround(FPDF_GetPageHeight(page) * scale);
-  if (width < 1) width = 1;
-  if (height < 1) height = 1;
-
-  if (width > BARE_PDFIUM_MAX_DIM || height > BARE_PDFIUM_MAX_DIM) {
-    FPDF_ClosePage(page);
-    err = js_throw_error(env, NULL, "rendered dimensions exceed limit");
-    assert(err == 0);
-    return NULL;
-  }
-
-  FPDF_BITMAP bitmap = FPDFBitmap_Create(width, height, 1);
-  if (bitmap == NULL) {
-    FPDF_ClosePage(page);
-    err = js_throw_error(env, NULL, "failed to allocate bitmap");
-    assert(err == 0);
-    return NULL;
-  }
-
-  // Paint white first: a page with no background renders onto transparency,
-  // and a vision model reads a transparent PNG as a black rectangle.
-  FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
-  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT);
 
   js_value_t *result = bare_pdfium__bitmap_result(env, bitmap);
 
   FPDFBitmap_Destroy(bitmap);
-  FPDF_ClosePage(page);
+
+  bare_pdfium__unlock();
 
   return result;
 }
@@ -512,8 +682,11 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_int64(env, argv[1], &page_index);
   assert(err == 0);
 
+  bare_pdfium__lock();
+
   FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
   if (page == NULL) {
+    bare_pdfium__unlock();
     err = js_throw_error(env, NULL, "failed to load page");
     assert(err == 0);
     return NULL;
@@ -547,6 +720,8 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
 
   FPDF_ClosePage(page);
 
+  bare_pdfium__unlock();
+
   return result;
 }
 
@@ -554,8 +729,8 @@ static js_value_t *
 bare_pdfium_extract_text(js_env_t *env, js_callback_info_t *info) {
   int err;
 
-  size_t argc = 2;
-  js_value_t *argv[2];
+  size_t argc = 3;
+  js_value_t *argv[3];
 
   err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
   assert(err == 0);
@@ -566,40 +741,198 @@ bare_pdfium_extract_text(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_int64(env, argv[1], &page_index);
   assert(err == 0);
 
-  FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
-  if (page == NULL) {
-    err = js_throw_error(env, NULL, "failed to load page");
+  bool clip;
+  err = js_get_value_bool(env, argv[2], &clip);
+  assert(err == 0);
+
+  unsigned short *text;
+  size_t units;
+  bare_pdfium__lock();
+  const char *error = bare_pdfium__page_text(handle->doc, (int) page_index, clip, &text, &units);
+  bare_pdfium__unlock();
+
+  if (error) {
+    err = js_throw_error(env, NULL, error);
     assert(err == 0);
     return NULL;
   }
 
-  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
-  if (text_page == NULL) {
-    FPDF_ClosePage(page);
-    err = js_throw_error(env, NULL, "failed to load text page");
-    assert(err == 0);
-    return NULL;
-  }
-
-  int char_count = FPDFText_CountChars(text_page);
-
-  js_value_t *result;
-  if (char_count <= 0) {
-    err = js_create_string_utf8(env, (const utf8_t *) "", 0, &result);
-    assert(err == 0);
-  } else {
-    unsigned short *buffer = malloc((size_t) (char_count + 1) * sizeof(unsigned short));
-    int written = FPDFText_GetText(text_page, 0, char_count, buffer);
-    size_t units = written > 0 ? (size_t) (written - 1) : 0;
-    err = js_create_string_utf16le(env, (const utf16_t *) buffer, units, &result);
-    assert(err == 0);
-    free(buffer);
-  }
-
-  FPDFText_ClosePage(text_page);
-  FPDF_ClosePage(page);
+  js_value_t *result = bare_pdfium__text_result(env, text, units);
+  free(text);
 
   return result;
+}
+
+static js_value_t *
+bare_pdfium__queue_job(js_env_t *env, js_value_t *external, int64_t page_index, bare_pdfium_job_t **result) {
+  int err;
+
+  bare_pdfium_job_t *job = calloc(1, sizeof(bare_pdfium_job_t));
+  job->req.data = job;
+  job->env = env;
+  job->handle = bare_pdfium__handle(env, external);
+  job->page_index = (int) page_index;
+
+  err = js_create_reference(env, external, 1, &job->ref);
+  assert(err == 0);
+
+  js_value_t *promise;
+  err = js_create_promise(env, &job->deferred, &promise);
+  assert(err == 0);
+
+  *result = job;
+  return promise;
+}
+
+static void
+bare_pdfium__settle_job(bare_pdfium_job_t *job, js_value_t *resolution) {
+  int err;
+  js_env_t *env = job->env;
+
+  if (job->error) {
+    js_value_t *message;
+    err = js_create_string_utf8(env, (const utf8_t *) job->error, -1, &message);
+    assert(err == 0);
+    js_value_t *error;
+    err = js_create_error(env, NULL, message, &error);
+    assert(err == 0);
+    err = js_reject_deferred(env, job->deferred, error);
+    assert(err == 0);
+  } else {
+    err = js_resolve_deferred(env, job->deferred, resolution);
+    assert(err == 0);
+  }
+
+  err = js_delete_reference(env, job->ref);
+  assert(err == 0);
+
+  free(job->text);
+  free(job->rgba);
+  free(job);
+}
+
+static void
+bare_pdfium__text_work(uv_work_t *req) {
+  bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
+  bare_pdfium__lock();
+  job->error = job->handle->doc
+    ? bare_pdfium__page_text(job->handle->doc, job->page_index, job->clip, &job->text, &job->units)
+    : "document is closed";
+  bare_pdfium__unlock();
+}
+
+static void
+bare_pdfium__text_done(uv_work_t *req, int status) {
+  int err;
+  bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
+  js_env_t *env = job->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  js_value_t *result = job->error ? NULL : bare_pdfium__text_result(env, job->text, job->units);
+  bare_pdfium__settle_job(job, result);
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+}
+
+static js_value_t *
+bare_pdfium_extract_text_async(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 3;
+  js_value_t *argv[3];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  int64_t page_index;
+  err = js_get_value_int64(env, argv[1], &page_index);
+  assert(err == 0);
+
+  bare_pdfium_job_t *job;
+  js_value_t *promise = bare_pdfium__queue_job(env, argv[0], page_index, &job);
+
+  err = js_get_value_bool(env, argv[2], &job->clip);
+  assert(err == 0);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &job->req, bare_pdfium__text_work, bare_pdfium__text_done);
+  assert(err == 0);
+
+  return promise;
+}
+
+static void
+bare_pdfium__render_work(uv_work_t *req) {
+  bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
+  bare_pdfium__lock();
+  if (job->handle->doc == NULL) {
+    job->error = "document is closed";
+  } else {
+    FPDF_BITMAP bitmap;
+    job->error = bare_pdfium__render_bitmap(job->handle->doc, job->page_index, job->scale, &bitmap);
+    if (job->error == NULL) {
+      job->width = FPDFBitmap_GetWidth(bitmap);
+      job->height = FPDFBitmap_GetHeight(bitmap);
+      job->rgba = malloc((size_t) job->width * (size_t) job->height * 4);
+      bare_pdfium__bitmap_rgba(bitmap, job->rgba);
+      FPDFBitmap_Destroy(bitmap);
+    }
+  }
+  bare_pdfium__unlock();
+}
+
+static void
+bare_pdfium__render_done(uv_work_t *req, int status) {
+  int err;
+  bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
+  js_env_t *env = job->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  js_value_t *result = job->error ? NULL : bare_pdfium__rgba_result(env, job->width, job->height, job->rgba);
+  bare_pdfium__settle_job(job, result);
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+}
+
+static js_value_t *
+bare_pdfium_render_async(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 3;
+  js_value_t *argv[3];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  int64_t page_index;
+  err = js_get_value_int64(env, argv[1], &page_index);
+  assert(err == 0);
+
+  bare_pdfium_job_t *job;
+  js_value_t *promise = bare_pdfium__queue_job(env, argv[0], page_index, &job);
+
+  err = js_get_value_double(env, argv[2], &job->scale);
+  assert(err == 0);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &job->req, bare_pdfium__render_work, bare_pdfium__render_done);
+  assert(err == 0);
+
+  return promise;
 }
 
 static js_value_t *
@@ -624,6 +957,8 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("render", bare_pdfium_render)
   V("extractImages", bare_pdfium_extract_images)
   V("extractText", bare_pdfium_extract_text)
+  V("extractTextAsync", bare_pdfium_extract_text_async)
+  V("renderAsync", bare_pdfium_render_async)
 #undef V
 
   return exports;

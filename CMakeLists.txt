@@ -8,8 +8,7 @@ include(cmake/pdfium.cmake)
 
 # INSTALL TARGET pdfium co-locates the shared library next to the built `.bare`
 # (under prebuilds/<target>/bare-pdfium/), which is where add_bare_module's baked
-# rpath (@loader_path/bare-pdfium, $ORIGIN/bare-pdfium) looks for it. A shipped
-# addon links a *static* PDFium instead (see README) and drops this.
+# rpath (@loader_path/bare-pdfium, $ORIGIN/bare-pdfium) looks for it.
 add_bare_module(bare_pdfium INSTALL TARGET pdfium)
 
 target_sources(

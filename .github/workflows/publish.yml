@@ -8,9 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       # Every target validated by prebuild.yml. android-ia32 is omitted
-      # (pdfium-binaries ships no android-x86); win32-arm64 is omitted (the
-      # holepunch base image fails to find npm on the windows-arm64 runner,
-      # unrelated to this addon). This set matches what the @qvac/* addons ship.
+      # (pdfium-binaries ships no android-x86).
       matrix:
         include:
           - os: ubuntu-22.04
@@ -50,6 +48,9 @@ jobs:
           - os: windows-2022
             platform: win32
             arch: x64
+          - os: windows-2022
+            platform: win32
+            arch: arm64
     runs-on: ${{ matrix.os }}
     name: Build / ${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.tags }}
     steps:

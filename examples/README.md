@@ -37,3 +37,28 @@ try {
 If you already have the bytes, pass them to `open` (or the one-shot
 `pdfium.textPages(bytes)`) instead. Pass `{ password: '...' }` to any of the
 openers to unlock an encrypted PDF.
+
+To keep the event loop free on a large file, stream the text with
+`textPagesAsync()` instead, and use `err.code` to tell an encrypted PDF from a
+corrupt one:
+
+```js
+const pdfium = require('bare-pdfium')
+
+let doc
+try {
+  doc = pdfium.openFile('document.pdf')
+} catch (err) {
+  if (err.code === 'PASSWORD') console.error('encrypted: pass { password }')
+  else if (err.code === 'FORMAT') console.error('not a PDF, or corrupted')
+  throw err
+}
+
+try {
+  for await (const { page, text } of doc.textPagesAsync({ clip: true })) {
+    console.log(`page ${page}:`, text)
+  }
+} finally {
+  doc.close()
+}
+```
