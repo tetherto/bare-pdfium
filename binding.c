@@ -317,6 +317,9 @@ bare_pdfium__page_text(FPDF_DOCUMENT doc, int page_index, bool clip, unsigned sh
       *text = malloc((size_t) (count + 1) * sizeof(unsigned short));
       int written = FPDFText_GetBoundedText(text_page, box.left, box.top, box.right, box.bottom, *text, count + 1);
       *units = written > count ? (size_t) count : (size_t) (written > 0 ? written : 0);
+      for (size_t i = 0; i < *units; i++) {
+        if ((*text)[i] == 0x0002) (*text)[i] = 0xfffe;
+      }
     }
   } else {
     int char_count = FPDFText_CountChars(text_page);

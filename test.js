@@ -228,6 +228,24 @@ test('extractText clip drops text outside the page box', (t) => {
   doc.close()
 })
 
+test('extractText clip handles the hyphen marker like the unclipped path', (t) => {
+  const doc = addon.open(hyphenPdf())
+  t.ok(doc.extractText(0, { clip: true }).includes('inference'), 'join rejoins the word')
+  t.ok(
+    doc.extractText(0, { clip: true, hyphens: 'keep' }).includes('infer-ence'),
+    'keep restores the hyphen'
+  )
+  t.ok(
+    doc.extractText(0, { clip: true, hyphens: 'raw' }).includes('infer\uFFFEence'),
+    'raw carries U+FFFE'
+  )
+  t.absent(
+    doc.extractText(0, { clip: true, hyphens: 'raw' }).includes('\u0002'),
+    'no U+0002 is left'
+  )
+  doc.close()
+})
+
 test('extractText clip is empty for a page with no text layer', (t) => {
   const doc = addon.open(imagePdf())
   t.is(doc.extractText(0, { clip: true }), '')
@@ -271,6 +289,18 @@ test('extractTextAsync matches extractText', async (t) => {
 test('extractTextAsync with clip drops off-page text', async (t) => {
   const doc = addon.open(offPagePdf())
   t.absent((await doc.extractTextAsync(0, { clip: true })).includes('outside'))
+  doc.close()
+})
+
+test('extractTextAsync with clip handles the hyphen marker', async (t) => {
+  const doc = addon.open(hyphenPdf())
+  for (const hyphens of ['join', 'keep', 'raw']) {
+    t.is(
+      await doc.extractTextAsync(0, { clip: true, hyphens }),
+      doc.extractText(0, { hyphens }),
+      hyphens
+    )
+  }
   doc.close()
 })
 
