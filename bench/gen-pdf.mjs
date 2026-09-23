@@ -47,7 +47,10 @@ for (let i = 0; i < pages; i++) {
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentNum(i)} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`
   )
   const content = pageContent(i)
-  obj(contentNum(i), `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`)
+  obj(
+    contentNum(i),
+    `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`
+  )
 }
 
 const xrefStart = pos
