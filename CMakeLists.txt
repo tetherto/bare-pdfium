@@ -22,3 +22,11 @@ target_link_libraries(
   PUBLIC
     pdfium
 )
+
+if(WIN32)
+  target_link_options(
+    ${bare_pdfium}
+    PUBLIC
+      /DELAYLOAD:pdfium.dll
+  )
+endif()
