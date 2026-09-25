@@ -1,6 +1,7 @@
 const test = require('brittle')
 const fs = require('bare-fs')
 const os = require('bare-os')
+const crypto = require('bare-crypto')
 const addon = require('.')
 
 // Assemble a PDF from object bodies with a correct xref, so no binary fixture
@@ -362,4 +363,282 @@ test('textPagesAsync streams every page in order', async (t) => {
   t.ok(pages[0].text.includes('Page One'))
   t.ok(pages[1].text.includes('Page Two'))
   doc.close()
+})
+
+function sizedPdf(width, height, text) {
+  const content = `BT /F1 12 Tf 10 10 Td (${text}) Tj ET`
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
+function formPdf() {
+  const on = '0 g 2 2 11 11 re f'
+  const widget = '/Type /Annot /Subtype /Widget /P 3 0 R /F 4'
+  const states = (name) => `/AP << /N << /${name} 10 0 R /Off 11 0 R >> >>`
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R 6 0 R 9 0 R 13 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 12 0 R >> >> >> >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [4 0 R 5 0 R 7 0 R 8 0 R 9 0 R 13 0 R] >>',
+    `<< ${widget} /FT /Tx /T (name) /Rect [20 250 200 270] /DA (/Helv 12 Tf 0 g) >>`,
+    `<< ${widget} /FT /Btn /T (agree) /Rect [20 220 35 235] /V /Off /AS /Off ${states('Yes')} >>`,
+    '<< /FT /Btn /Ff 49152 /T (color) /V /Off /Kids [7 0 R 8 0 R] >>',
+    `<< ${widget} /Parent 6 0 R /Rect [20 190 35 205] /AS /Off ${states('red')} >>`,
+    `<< ${widget} /Parent 6 0 R /Rect [50 190 65 205] /AS /Off ${states('blue')} >>`,
+    `<< ${widget} /FT /Ch /Ff 131072 /T (size) /Opt [(S) (M) (L)] /Rect [20 150 120 170] /DA (/Helv 12 Tf 0 g) >>`,
+    `<< /Type /XObject /Subtype /Form /BBox [0 0 15 15] /Length ${on.length} >>\nstream\n${on}\nendstream`,
+    '<< /Type /XObject /Subtype /Form /BBox [0 0 15 15] /Length 0 >>\nstream\n\nendstream',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< ${widget} /FT /Tx /T (id) /Ff 1 /V (A-1) /Rect [20 120 200 140] /DA (/Helv 12 Tf 0 g) >>`
+  ])
+}
+
+function rc4(key, data) {
+  const s = Array.from({ length: 256 }, (_, i) => i)
+  for (let i = 0, j = 0; i < 256; i++) {
+    j = (j + s[i] + key[i % key.length]) & 255
+    ;[s[i], s[j]] = [s[j], s[i]]
+  }
+  const out = Buffer.alloc(data.length)
+  for (let n = 0, i = 0, j = 0; n < data.length; n++) {
+    i = (i + 1) & 255
+    j = (j + s[i]) & 255
+    ;[s[i], s[j]] = [s[j], s[i]]
+    out[n] = data[n] ^ s[(s[i] + s[j]) & 255]
+  }
+  return out
+}
+
+function md5(...parts) {
+  return crypto.createHash('md5').update(Buffer.concat(parts)).digest()
+}
+
+function lockedPdf(password) {
+  const padding = Buffer.from(
+    '28bf4e5e4e758a4164004e56fffa01082e2e00b6d0683e802f0ca9fe6453697a',
+    'hex'
+  )
+  const pad = (text) => Buffer.concat([Buffer.from(text, 'latin1'), padding]).subarray(0, 32)
+  const id = Buffer.from('00112233445566778899aabbccddeeff', 'hex')
+  const permissions = Buffer.alloc(4)
+  permissions.writeInt32LE(-4)
+
+  const owner = rc4(md5(pad('owner')).subarray(0, 5), pad(password))
+  const key = md5(pad(password), owner, permissions, id).subarray(0, 5)
+  const user = rc4(key, padding)
+
+  const content = Buffer.from('BT /F1 24 Tf 40 100 Td (Secret) Tj ET', 'latin1')
+  const objectKey = md5(key, Buffer.from([4, 0, 0, 0, 0])).subarray(0, 10)
+  const stream = rc4(objectKey, content).toString('latin1')
+
+  return buildPdf(
+    [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+      `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+      `<< /Filter /Standard /V 1 /R 2 /O <${owner.toString('hex')}> /U <${user.toString('hex')}> /P -4 >>`
+    ],
+    `/Encrypt 6 0 R /ID [<${id.toString('hex')}> <${id.toString('hex')}>] `
+  )
+}
+
+function pageTexts(pdf, opts) {
+  return [...addon.textPages(pdf, opts)].map(({ text }) => text)
+}
+
+test('create and importPages build a document from other documents', (t) => {
+  const merged = addon.create()
+  t.is(merged.pageCount(), 0)
+  const one = addon.open(twoPageTextPdf())
+  const two = addon.open(textPdf())
+  merged.importPages(one, { pages: [1] })
+  merged.importPages(two)
+  merged.importPages(one, { pages: [0], at: 0 })
+  one.close()
+  two.close()
+  const texts = pageTexts(merged.save())
+  merged.close()
+  t.is(texts.length, 3)
+  t.ok(texts[0].includes('Page One'))
+  t.ok(texts[1].includes('Page Two'))
+  t.ok(texts[2].includes('Hello PDF'))
+})
+
+test('merge concatenates PDFs in order', (t) => {
+  const texts = pageTexts(addon.merge([textPdf(), twoPageTextPdf()]))
+  t.is(texts.length, 3)
+  t.ok(texts[0].includes('Hello PDF'))
+  t.ok(texts[2].includes('Page Two'))
+})
+
+test('merge rejects an empty list', (t) => {
+  t.exception.all(() => addon.merge([]), /array of PDFs/)
+})
+
+test('extractPages keeps and reorders the chosen pages', (t) => {
+  const texts = pageTexts(addon.extractPages(twoPageTextPdf(), [1, 0]))
+  t.is(texts.length, 2)
+  t.ok(texts[0].includes('Page Two'))
+  t.ok(texts[1].includes('Page One'))
+})
+
+test('extractPages rejects an out-of-range page', (t) => {
+  t.exception.all(() => addon.extractPages(textPdf(), [3]), /out of range/)
+})
+
+test('rotate turns pages clockwise and adds to the existing rotation', (t) => {
+  const once = addon.rotate(sizedPdf(200, 100, 'wide'), 90)
+  t.alike(addon.open(once).pageSize(0), { width: 100, height: 200 })
+  const twice = addon.rotate(once, -90)
+  t.alike(addon.open(twice).pageSize(0), { width: 200, height: 100 })
+  t.ok(pageTexts(once)[0].includes('wide'), 'content is kept')
+})
+
+test('rotate only touches the pages it is given', (t) => {
+  const doc = addon.open(addon.merge([sizedPdf(200, 100, 'a'), sizedPdf(200, 100, 'b')]))
+  doc.rotate(180, { pages: [1] })
+  const rotated = addon.open(doc.save())
+  doc.close()
+  t.alike(rotated.pageSize(0), { width: 200, height: 100 })
+  t.alike(rotated.pageSize(1), { width: 200, height: 100 })
+  rotated.close()
+})
+
+test('rotate rejects angles that are not a multiple of 90', (t) => {
+  t.exception.all(() => addon.rotate(textPdf(), 45), /multiple of 90/)
+})
+
+test('decrypt removes the password from an encrypted PDF', (t) => {
+  const locked = lockedPdf('s3cret')
+  try {
+    addon.open(locked)
+    t.fail('the fixture should need its password')
+  } catch (err) {
+    t.is(err.code, 'PASSWORD')
+  }
+  const unlocked = addon.decrypt(locked, 's3cret')
+  t.ok(pageTexts(unlocked)[0].includes('Secret'), 'opens without a password')
+})
+
+test('decrypt reports PASSWORD for a wrong password', (t) => {
+  try {
+    addon.decrypt(lockedPdf('s3cret'), 'nope')
+    t.fail('should throw')
+  } catch (err) {
+    t.is(err.code, 'PASSWORD')
+  }
+})
+
+test('save keeps the encryption unless asked to remove it', (t) => {
+  const doc = addon.open(lockedPdf('s3cret'), { password: 's3cret' })
+  const saved = doc.save()
+  doc.close()
+  t.exception(() => addon.open(saved), 'still needs the password')
+  t.ok(pageTexts(saved, { password: 's3cret' })[0].includes('Secret'))
+})
+
+test('watermark stamps text on every page', (t) => {
+  const stamped = addon.watermark(twoPageTextPdf(), 'DRAFT')
+  const texts = pageTexts(stamped)
+  t.ok(texts[0].includes('DRAFT') && texts[0].includes('Page One'))
+  t.ok(texts[1].includes('DRAFT') && texts[1].includes('Page Two'))
+})
+
+test('watermark can target pages and go under the content', (t) => {
+  const stamped = addon.watermark(twoPageTextPdf(), 'COPY', {
+    pages: [1],
+    position: 'under',
+    size: 30
+  })
+  const texts = pageTexts(stamped)
+  t.absent(texts[0].includes('COPY'))
+  t.ok(texts[1].includes('COPY'))
+})
+
+test('watermark is drawn inside the page and changes its pixels', (t) => {
+  const pdf = sizedPdf(300, 200, 'x')
+  const before = addon.render(pdf, 0).data
+  const after = addon.render(addon.watermark(pdf, 'DRAFT', { opacity: 1, color: [255, 0, 0] }), 0)
+  let red = 0
+  for (let i = 0; i < after.data.length; i += 4) {
+    if (after.data[i] > 200 && after.data[i + 1] < 80 && before[i + 1] > 200) red++
+  }
+  t.ok(red > 500, `the stamp paints red pixels (${red})`)
+})
+
+test('watermark validates its options', (t) => {
+  t.exception.all(() => addon.watermark(textPdf(), ''), /non-empty/)
+  t.exception.all(() => addon.watermark(textPdf(), 'x', { position: 'side' }), /position/)
+  t.exception.all(() => addon.watermark(textPdf(), 'x', { opacity: 2 }), /opacity/)
+  t.exception.all(() => addon.watermark(textPdf(), '草稿'), /TrueType font/)
+})
+
+test('fields lists the form with types, values and options', (t) => {
+  const fields = addon.fields(formPdf())
+  t.alike(
+    fields.map(({ name, type }) => [name, type]),
+    [
+      ['name', 'text'],
+      ['agree', 'checkbox'],
+      ['color', 'radio'],
+      ['size', 'combobox'],
+      ['id', 'text']
+    ]
+  )
+  const byName = Object.fromEntries(fields.map((field) => [field.name, field]))
+  t.is(byName.agree.value, false)
+  t.alike(byName.color.options, ['red', 'blue'])
+  t.is(byName.color.value, null)
+  t.alike(byName.size.options, ['S', 'M', 'L'])
+  t.is(byName.id.value, 'A-1')
+  t.is(byName.id.readOnly, true)
+})
+
+test('fields is empty for a PDF without a form', (t) => {
+  t.alike(addon.fields(textPdf()), [])
+})
+
+test('fillFields sets text, checkbox, radio and dropdown values', (t) => {
+  const filled = addon.fillFields(formPdf(), {
+    name: 'Ada Lovelace',
+    agree: true,
+    color: 'blue',
+    size: 'M'
+  })
+  const byName = Object.fromEntries(addon.fields(filled).map((field) => [field.name, field]))
+  t.is(byName.name.value, 'Ada Lovelace')
+  t.is(byName.agree.value, true)
+  t.is(byName.color.value, 'blue')
+  t.is(byName.size.value, 'M')
+  t.is(byName.id.value, 'A-1', 'untouched fields keep their value')
+})
+
+test('fillFields can clear a checkbox and change a radio choice', (t) => {
+  const first = addon.fillFields(formPdf(), { agree: true, color: 'red' })
+  const second = addon.fillFields(first, { agree: false, color: 'blue' })
+  const byName = Object.fromEntries(addon.fields(second).map((field) => [field.name, field]))
+  t.is(byName.agree.value, false)
+  t.is(byName.color.value, 'blue')
+})
+
+test('fillFields explains bad input', (t) => {
+  t.exception.all(() => addon.fillFields(formPdf(), { nope: 'x' }), /no field named 'nope'/)
+  t.exception.all(() => addon.fillFields(formPdf(), { id: 'B-2' }), /read-only/)
+  t.exception.all(() => addon.fillFields(formPdf(), { color: 'green' }), /radio group/)
+  t.exception.all(() => addon.fillFields(formPdf(), { size: 'XL' }), /accepts one of/)
+  t.exception.all(() => addon.fillFields(textPdf(), { name: 'x' }), /no form fields/)
+})
+
+test('edit methods throw once the document is closed', (t) => {
+  const doc = addon.open(textPdf())
+  doc.close()
+  t.exception.all(() => doc.save(), /document is closed/)
+  t.exception.all(() => doc.rotate(90), /document is closed/)
+  t.exception.all(() => doc.fields(), /document is closed/)
 })
