@@ -107,6 +107,41 @@ function groupFields(widgets) {
   })
 }
 
+function queue(args, call) {
+  return serialize(() => call(...args()))
+}
+
+function prepareFill(list, values) {
+  const fields = new Map(list.map((field) => [field.name, field]))
+  const names = Object.keys(values)
+  if (names.length === 0) throw new TypeError('pass at least one field to fill')
+
+  const filled = names.map((name) => {
+    const field = fields.get(name)
+    if (!field) {
+      const known = [...fields.keys()]
+      throw new Error(
+        known.length
+          ? `no field named '${name}'; the form has ${JSON.stringify(known)}`
+          : 'the document has no form fields'
+      )
+    }
+    return fillValue(field, values[name])
+  })
+
+  return { names, filled }
+}
+
+function checkFill(list, names, filled, values) {
+  const after = new Map(list.map((field) => [field.name, field]))
+  for (const [i, name] of names.entries()) {
+    if (!sameValue(after.get(name), filled[i])) {
+      throw new Error(`field '${name}' did not take the value ${JSON.stringify(values[name])}`)
+    }
+  }
+  return names.map((name) => after.get(name))
+}
+
 function sameValue(field, value) {
   if (field.type === 'listbox' && field.multiSelect) {
     return field.value.length === value.length && value.every((item) => field.value.includes(item))
@@ -258,20 +293,39 @@ class Doc {
     return this._handle
   }
 
-  importPages(source, opts = {}) {
+  _importArgs(source, opts) {
     const handle = this._open()
     const from = source._open()
-    const { pages, at = this.pageCount() } = opts
-    binding.importPages(handle, from, pageList(source.pageCount(), pages), at)
+    const { pages, at = -1 } = opts
+    if (!Number.isInteger(at) || at < -1 || at > this.pageCount()) {
+      throw new RangeError(`at must be a page index from 0 to ${this.pageCount()}, got ${at}`)
+    }
+    return [handle, from, pageList(source.pageCount(), pages), at]
+  }
+
+  importPages(source, opts = {}) {
+    binding.importPages(...this._importArgs(source, opts))
+  }
+
+  importPagesAsync(source, opts = {}) {
+    return queue(() => this._importArgs(source, opts), binding.importPagesAsync)
+  }
+
+  _rotateArgs(degrees, opts) {
+    const handle = this._open()
+    const turns = quarterTurns(degrees)
+    return [handle, pageList(this.pageCount(), opts.pages), turns]
   }
 
   rotate(degrees, opts = {}) {
-    const handle = this._open()
-    const turns = quarterTurns(degrees)
-    binding.rotate(handle, pageList(this.pageCount(), opts.pages), turns)
+    binding.rotate(...this._rotateArgs(degrees, opts))
   }
 
-  watermark(text, opts = {}) {
+  rotateAsync(degrees, opts = {}) {
+    return queue(() => this._rotateArgs(degrees, opts), binding.rotateAsync)
+  }
+
+  _watermarkArgs(text, opts) {
     const handle = this._open()
     const {
       pages,
@@ -291,7 +345,7 @@ class Doc {
     if (font === null && /[^\x20-\xff]/.test(text)) {
       throw new TypeError('text outside Latin-1 needs a TrueType font passed as opts.font')
     }
-    binding.watermark(
+    return [
       handle,
       pageList(this.pageCount(), pages),
       text,
@@ -300,46 +354,54 @@ class Doc {
       angle,
       packColor(color, opacity),
       position === 'under'
-    )
+    ]
+  }
+
+  watermark(text, opts = {}) {
+    binding.watermark(...this._watermarkArgs(text, opts))
+  }
+
+  watermarkAsync(text, opts = {}) {
+    return queue(() => this._watermarkArgs(text, opts), binding.watermarkAsync)
   }
 
   fields() {
     return groupFields(binding.formWidgets(this._open()))
   }
 
+  fieldsAsync() {
+    return queue(() => [this._open()], binding.formWidgetsAsync).then(groupFields)
+  }
+
   fillFields(values) {
     const handle = this._open()
-    const fields = new Map(this.fields().map((field) => [field.name, field]))
-    const names = Object.keys(values)
-    if (names.length === 0) throw new TypeError('pass at least one field to fill')
-
-    const filled = names.map((name) => {
-      const field = fields.get(name)
-      if (!field) {
-        const known = [...fields.keys()]
-        throw new Error(
-          known.length
-            ? `no field named '${name}'; the form has ${JSON.stringify(known)}`
-            : 'the document has no form fields'
-        )
-      }
-      return fillValue(field, values[name])
-    })
-
+    const { names, filled } = prepareFill(this.fields(), values)
     binding.fillForm(handle, names, filled)
+    return checkFill(this.fields(), names, filled, values)
+  }
 
-    const after = new Map(this.fields().map((field) => [field.name, field]))
-    for (const [i, name] of names.entries()) {
-      if (!sameValue(after.get(name), filled[i])) {
-        throw new Error(`field '${name}' did not take the value ${JSON.stringify(values[name])}`)
-      }
-    }
-    return names.map((name) => after.get(name))
+  fillFieldsAsync(values) {
+    return serialize(async () => {
+      const handle = this._open()
+      const before = groupFields(await binding.formWidgetsAsync(handle))
+      const { names, filled } = prepareFill(before, values)
+      await binding.fillFormAsync(handle, names, filled)
+      const after = groupFields(await binding.formWidgetsAsync(handle))
+      return checkFill(after, names, filled, values)
+    })
+  }
+
+  _saveArgs(opts) {
+    const { removeSecurity = false } = opts
+    return [this._open(), removeSecurity === true]
   }
 
   save(opts = {}) {
-    const { removeSecurity = false } = opts
-    return Buffer.from(binding.save(this._open(), removeSecurity === true))
+    return Buffer.from(binding.save(...this._saveArgs(opts)))
+  }
+
+  saveAsync(opts = {}) {
+    return queue(() => this._saveArgs(opts), binding.saveAsync).then((data) => Buffer.from(data))
   }
 
   close() {
@@ -451,5 +513,66 @@ exports.fillFields = function fillFields(pdf, values, opts = {}) {
   return edit(pdf, opts, (doc) => {
     doc.fillFields(values)
     return doc.save()
+  })
+}
+
+async function editAsync(pdf, opts, fn) {
+  const doc = exports.open(pdf, opts)
+  try {
+    return await fn(doc)
+  } finally {
+    doc.close()
+  }
+}
+
+exports.mergeAsync = async function mergeAsync(pdfs) {
+  if (!Array.isArray(pdfs) || pdfs.length === 0) throw new TypeError('merge takes an array of PDFs')
+  const merged = exports.create()
+  try {
+    for (const pdf of pdfs) await editAsync(pdf, {}, (doc) => merged.importPagesAsync(doc))
+    return await merged.saveAsync()
+  } finally {
+    merged.close()
+  }
+}
+
+exports.extractPagesAsync = async function extractPagesAsync(pdf, pages, opts = {}) {
+  return editAsync(pdf, opts, async (doc) => {
+    const part = exports.create()
+    try {
+      await part.importPagesAsync(doc, { pages })
+      return await part.saveAsync()
+    } finally {
+      part.close()
+    }
+  })
+}
+
+exports.rotateAsync = async function rotateAsync(pdf, degrees, opts = {}) {
+  return editAsync(pdf, opts, async (doc) => {
+    await doc.rotateAsync(degrees, opts)
+    return doc.saveAsync()
+  })
+}
+
+exports.decryptAsync = async function decryptAsync(pdf, password) {
+  return editAsync(pdf, { password }, (doc) => doc.saveAsync({ removeSecurity: true }))
+}
+
+exports.watermarkAsync = async function watermarkAsync(pdf, text, opts = {}) {
+  return editAsync(pdf, opts, async (doc) => {
+    await doc.watermarkAsync(text, opts)
+    return doc.saveAsync()
+  })
+}
+
+exports.fieldsAsync = async function fieldsAsync(pdf, opts = {}) {
+  return editAsync(pdf, opts, (doc) => doc.fieldsAsync())
+}
+
+exports.fillFieldsAsync = async function fillFieldsAsync(pdf, values, opts = {}) {
+  return editAsync(pdf, opts, async (doc) => {
+    await doc.fillFieldsAsync(values)
+    return doc.saveAsync()
   })
 }

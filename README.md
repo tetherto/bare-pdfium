@@ -238,7 +238,30 @@ pdfium.fillFields(bytes, { name: 'Ada Lovelace' })
 ```
 
 Every one-shot but `merge` and `decrypt` takes `password` in its options for an
-encrypted input. Edits are synchronous and hold the PDFium lock while they run.
+encrypted input.
+
+Each edit also has an async form that runs on a libuv worker thread, the same way
+`renderAsync` does: `importPagesAsync`, `rotateAsync`, `watermarkAsync`,
+`fieldsAsync`, `fillFieldsAsync` and `saveAsync` on a document, and `mergeAsync`,
+`extractPagesAsync`, `rotateAsync`, `decryptAsync`, `watermarkAsync`,
+`fieldsAsync` and `fillFieldsAsync` as one-shots. They resolve to what the sync
+form returns.
+
+```js
+const doc = pdfium.open(bytes)
+doc.importPagesAsync(other, { pages: [0] })
+doc.rotateAsync(90, { pages: [0] })
+doc.watermarkAsync('DRAFT')
+const out = await doc.saveAsync()
+```
+
+Async calls run one at a time in the order they were made, so a chain like the
+one above needs no `await` between steps. Each call checks its arguments when
+its turn comes, against the document as the calls before it left it. A bad
+argument rejects the promise and never throws. A call still queued when its
+document, or the source of an import, is closed rejects with
+`document is closed`. The one-shots open their input on the calling thread and
+do the edit and the save on the worker.
 
 ### Types
 

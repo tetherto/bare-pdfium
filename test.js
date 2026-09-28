@@ -642,3 +642,132 @@ test('edit methods throw once the document is closed', (t) => {
   t.exception.all(() => doc.rotate(90), /document is closed/)
   t.exception.all(() => doc.fields(), /document is closed/)
 })
+
+test('async edits match their sync forms', async (t) => {
+  t.alike(
+    pageTexts(await addon.mergeAsync([textPdf(), twoPageTextPdf()])),
+    pageTexts(addon.merge([textPdf(), twoPageTextPdf()]))
+  )
+  t.alike(
+    pageTexts(await addon.extractPagesAsync(twoPageTextPdf(), [1, 0])),
+    pageTexts(addon.extractPages(twoPageTextPdf(), [1, 0]))
+  )
+
+  const rotated = await addon.rotateAsync(sizedPdf(200, 100, 'wide'), 90)
+  t.alike(addon.open(rotated).pageSize(0), { width: 100, height: 200 })
+
+  t.ok(pageTexts(await addon.watermarkAsync(twoPageTextPdf(), 'DRAFT'))[1].includes('DRAFT'))
+  t.ok(pageTexts(await addon.decryptAsync(lockedPdf('s3cret'), 's3cret'))[0].includes('Secret'))
+
+  t.alike(await addon.fieldsAsync(formPdf()), addon.fields(formPdf()))
+  const values = { name: 'Ada Lovelace', agree: true, color: 'blue', size: 'M' }
+  t.alike(
+    addon.fields(await addon.fillFieldsAsync(formPdf(), values)),
+    addon.fields(addon.fillFields(formPdf(), values))
+  )
+})
+
+test('Doc async edits apply in the order they were called', async (t) => {
+  const doc = addon.create()
+  const source = addon.open(twoPageTextPdf())
+  const steps = [
+    doc.importPagesAsync(source, { pages: [1] }),
+    doc.importPagesAsync(source, { pages: [0], at: 0 }),
+    doc.rotateAsync(90, { pages: [1] }),
+    doc.watermarkAsync('COPY', { pages: [0] })
+  ]
+  await Promise.all(steps)
+  const saved = await doc.saveAsync()
+  doc.close()
+  source.close()
+  const texts = pageTexts(saved)
+  t.ok(texts[0].includes('Page One') && texts[0].includes('COPY'))
+  t.ok(texts[1].includes('Page Two') && !texts[1].includes('COPY'))
+})
+
+test('fillFieldsAsync returns the filled fields', async (t) => {
+  const doc = addon.open(formPdf())
+  const filled = await doc.fillFieldsAsync({ name: 'Grace Hopper', size: 'L' })
+  t.alike(
+    filled.map(({ name, value }) => [name, value]),
+    [
+      ['name', 'Grace Hopper'],
+      ['size', 'L']
+    ]
+  )
+  doc.close()
+})
+
+test('fillFieldsAsync keeps its place in the queue', async (t) => {
+  const doc = addon.open(formPdf())
+  const filling = doc.fillFieldsAsync({ name: 'Ada Lovelace' })
+  const saved = await doc.saveAsync()
+  await filling
+  doc.close()
+  const name = addon.fields(saved).find((field) => field.name === 'name')
+  t.is(name.value, 'Ada Lovelace', 'the save made after the fill sees the filled value')
+})
+
+test('async edits reject bad input instead of throwing', async (t) => {
+  const rejection = (promise) =>
+    promise.then(
+      () => null,
+      (err) => err.message
+    )
+  const doc = addon.open(textPdf())
+  const pending = doc.rotateAsync(45)
+  t.ok(pending instanceof Promise, 'a validation error still returns a promise')
+  t.ok(/multiple of 90/.test(await rejection(pending)))
+  t.ok(/non-empty/.test(await rejection(doc.watermarkAsync(''))))
+  t.ok(
+    /out of range/.test(
+      await rejection(doc.importPagesAsync(addon.open(textPdf()), { pages: [4] }))
+    )
+  )
+  t.ok(/no form fields/.test(await rejection(doc.fillFieldsAsync({ name: 'x' }))))
+  t.ok(/array of PDFs/.test(await rejection(addon.mergeAsync([]))))
+  t.ok(/password/.test(await rejection(addon.decryptAsync(lockedPdf('s3cret'), 'nope'))))
+  doc.close()
+})
+
+test('async edits queued before close reject instead of crashing', async (t) => {
+  const doc = addon.open(twoPageTextPdf())
+  const rotate = doc.rotateAsync(90)
+  const save = doc.saveAsync()
+  const fields = doc.fieldsAsync()
+  doc.close()
+  const rejection = (promise) =>
+    promise.then(
+      () => null,
+      (err) => err.message
+    )
+  t.is(await rejection(rotate), 'document is closed')
+  t.is(await rejection(save), 'document is closed')
+  t.is(await rejection(fields), 'document is closed')
+  t.is(await rejection(doc.saveAsync()), 'document is closed')
+
+  const target = addon.create()
+  const source = addon.open(textPdf())
+  const imported = target.importPagesAsync(source)
+  source.close()
+  t.is(await rejection(imported), 'document is closed')
+  target.close()
+})
+
+test('async edits interleave with async reads on other documents', async (t) => {
+  const reader = addon.open(twoPageTextPdf())
+  const jobs = []
+  for (let i = 0; i < 10; i++) {
+    jobs.push(
+      addon.watermarkAsync(textPdf(), `W${i}`),
+      reader.extractTextAsync(i % 2),
+      reader.renderAsync(0)
+    )
+  }
+  const results = await Promise.all(jobs)
+  t.ok(pageTexts(results[0])[0].includes('W0'))
+  t.ok(pageTexts(results[27])[0].includes('W9'))
+  t.ok(results[1].includes('Page One'))
+  t.is(results[2].width, 200)
+  reader.close()
+})

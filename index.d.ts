@@ -88,11 +88,17 @@ export class Doc {
   textPages(opts?: TextOptions): IterableIterator<{ page: number; text: string }>
   textPagesAsync(opts?: TextOptions): AsyncIterableIterator<{ page: number; text: string }>
   importPages(source: Doc, opts?: ImportOptions): void
+  importPagesAsync(source: Doc, opts?: ImportOptions): Promise<void>
   rotate(degrees: number, opts?: PageOptions): void
+  rotateAsync(degrees: number, opts?: PageOptions): Promise<void>
   watermark(text: string, opts?: WatermarkOptions): void
+  watermarkAsync(text: string, opts?: WatermarkOptions): Promise<void>
   fields(): Field[]
+  fieldsAsync(): Promise<Field[]>
   fillFields(values: FieldValues): Field[]
+  fillFieldsAsync(values: FieldValues): Promise<Field[]>
   save(opts?: SaveOptions): Uint8Array
+  saveAsync(opts?: SaveOptions): Promise<Uint8Array>
   close(): void
 }
 
@@ -140,3 +146,33 @@ export function watermark(
 export function fields(pdf: Uint8Array, opts?: OpenOptions): Field[]
 
 export function fillFields(pdf: Uint8Array, values: FieldValues, opts?: OpenOptions): Uint8Array
+
+export function mergeAsync(pdfs: Uint8Array[]): Promise<Uint8Array>
+
+export function extractPagesAsync(
+  pdf: Uint8Array,
+  pages: number[],
+  opts?: OpenOptions
+): Promise<Uint8Array>
+
+export function rotateAsync(
+  pdf: Uint8Array,
+  degrees: number,
+  opts?: OpenOptions & PageOptions
+): Promise<Uint8Array>
+
+export function decryptAsync(pdf: Uint8Array, password: string): Promise<Uint8Array>
+
+export function watermarkAsync(
+  pdf: Uint8Array,
+  text: string,
+  opts?: OpenOptions & WatermarkOptions
+): Promise<Uint8Array>
+
+export function fieldsAsync(pdf: Uint8Array, opts?: OpenOptions): Promise<Field[]>
+
+export function fillFieldsAsync(
+  pdf: Uint8Array,
+  values: FieldValues,
+  opts?: OpenOptions
+): Promise<Uint8Array>
