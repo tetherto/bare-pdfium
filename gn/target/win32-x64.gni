@@ -1,0 +1,2 @@
+import("//bare-pdfium/gn/platform/win32.gni")
+import("//bare-pdfium/gn/arch/x64.gni")

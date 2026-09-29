@@ -1,0 +1,9 @@
+target_os = "ios"
+
+ios_deployment_target = "14.0"
+
+ios_enable_code_signing = false
+
+# Link with ld64 so archives are regular rather than thin, which ld64 cannot
+# read when bare-pdfium links them.
+use_lld = false

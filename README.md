@@ -168,44 +168,64 @@ consumers do not need `@types/node`.
 
 ## Build
 
-Requires the Bare toolchain (`npm i -g bare-make`) and CMake ≥ 3.31. x86 targets
-also need [NASM](https://www.nasm.us) for libjpeg-turbo's SIMD code.
+PDFium is built by its own GN build and linked into the addon through
+[`cmake-gn`](https://github.com/holepunchto/cmake-gn), the way
+[`libjs`](https://github.com/holepunchto/libjs) links V8. Every prebuild is a
+single `.bare`. Building needs
+[`depot_tools`](https://commondatastorage.googleapis.com/chrome-infra-docs/flat/depot_tools/docs/html/depot_tools_tutorial.html#_setting_up)
+and the Bare toolchain (`npm i -g bare-make`).
+
+`DEPS` pins PDFium, which pins everything it builds with. Fetch it with gclient
+into a directory of its own, with this repository checked out as
+`pdfium/bare-pdfium` inside it:
 
 ```sh
+mkdir -p pdfium/pdfium && cd pdfium
+ln -s <path to bare-pdfium> pdfium/bare-pdfium
+gclient config --name pdfium/bare-pdfium --unmanaged --custom-var checkout_configuration=minimal https://github.com/tetherto/bare-pdfium.git
+gclient sync --no-history --shallow
+ln -s pdfium/buildtools buildtools
+```
+
+For android, ios or win targets, first add `target_os = ["<os>"]` to `.gclient`,
+and for android also `"checkout_android": True` to its `custom_vars`. On Windows,
+use a junction (`mklink /j`) instead of `ln -s` and set
+`DEPOT_TOOLS_WIN_TOOLCHAIN=0`.
+
+Then build PDFium for a target from [`gn/target/`](gn/target):
+
+```sh
+cd pdfium
+gn gen out/<target> --args='import("//bare-pdfium/gn/pdfium.gni") import("//bare-pdfium/gn/mode/release.gni") import("//bare-pdfium/gn/target/<target>.gni")'
+autoninja -C out/<target> pdfium buildtools/third_party/libc++:libc++
+```
+
+On Windows, build only `pdfium`, as PDFium uses the MSVC STL there. Finally,
+point the addon at the build, using absolute paths. Linux builds also take the
+sysroot PDFium was built against, which
+`python3 build/linux/sysroot_scripts/install-sysroot.py --arch=<arch>` installs as
+`build/linux/debian_bullseye_<amd64|arm64>-sysroot`:
+
+```sh
+cd <path to bare-pdfium>
 npm install
-bare-make generate   # fetches PDFium and its dependencies at pinned revisions
+bare-make generate -D GN_DIR=<root>/pdfium -D GN_OUT_DIR=<root>/pdfium/out/<target>
 bare-make build
 bare-make install    # writes prebuilds/<target>/
 npm test
 ```
 
-PDFium is compiled from source with CMake and linked statically, so every
-prebuild is a single `.bare`. `cmake/pdfium.cmake` pins PDFium to a commit on its
-`chromium/<n>` branch and each dependency to the revision that branch's `DEPS`
-uses; `cmake/pdfium/sources.cmake` mirrors the sources of PDFium's GN targets
-with XFA, V8 and Skia off, and the HarfBuzz and ICU builds carry the defines of
-their GN targets.
-The first configure needs network access. Android builds share the app's C++
-runtime, so pass `-D ANDROID_STL=c++_shared` to `bare-make generate` as the
-workflows do.
-
-`test/render.js` compares renders against the expected PNGs from PDFium's own
-pixel tests, byte for byte.
+`.github/actions/pdfium` runs these steps in CI. `test/render.js` compares renders
+against the expected PNGs from PDFium's own pixel tests, byte for byte.
 
 ### Updating PDFium
 
-1. Pick the `chromium/<n>` branch, pin its head commit in `cmake/pdfium.cmake`,
-   and update every dependency pin to the revisions in that commit's `DEPS`
-   (Chromium's abseil and ICU forks name their upstream in `README.chromium`).
-   The Chromium `build/` headers are pinned by tag and hash.
-2. `bare-make generate`, then check the source lists and the HarfBuzz and ICU
-   defines against their GN files, and regenerate the reference renders. The ICU
-   check needs Chromium's ICU fork at the revision PDFium's `DEPS` pins, which
-   the script prints when run without it:
+1. Pick the `chromium/<n>` branch and pin its head commit as `pdfium_revision` in
+   `DEPS`.
+2. `gclient sync`, rebuild, and regenerate the reference renders:
 
    ```sh
-   bare scripts/pdfium-sources.js build/_deps/git+pdfium.googlesource.com+pdfium-src <chromium icu checkout>
-   bare scripts/pdfium-fixtures.js build/_deps/git+pdfium.googlesource.com+pdfium-src
+   bare scripts/pdfium-fixtures.js <root>/pdfium
    ```
 
    Review any page the fixture script reports as dropped before accepting it.
@@ -225,9 +245,9 @@ publishes as `release-<major>.<minor>`.
 ## Licensing
 
 This wrapper is Apache-2.0. The bundled PDFium (shipped in `prebuilds/`) is
-BSD-3-Clause and Apache-2.0 (© The PDFium Authors) and statically links further permissive
-components. See `NOTICE.md` — a shipping application must carry these
-attributions.
+BSD-3-Clause and Apache-2.0 (© The PDFium Authors) and statically links further
+permissive components, along with LLVM's libc++ outside Windows. See `NOTICE.md`
+— a shipping application must carry these attributions.
 
 ## Why not pdf.js?
 

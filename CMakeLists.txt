@@ -1,47 +1,35 @@
 cmake_minimum_required(VERSION 3.31)
 
 find_package(cmake-bare REQUIRED PATHS node_modules/cmake-bare)
-find_package(cmake-fetch REQUIRED PATHS node_modules/cmake-fetch)
-find_package(cmake-ports REQUIRED PATHS node_modules/cmake-ports)
 
-project(bare_pdfium C CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-# Chromium builds PDFium and every dependency with these; PDFium's safety and rendering assume them.
-if(CMAKE_C_COMPILER_FRONTEND_VARIANT MATCHES "MSVC")
-  set(pdfium_flags
-    /Gy
-    /Gw
-    /clang:-fno-strict-aliasing
-    /clang:-fno-strict-overflow
-    /clang:-fno-delete-null-pointer-checks
-    /clang:-ftrivial-auto-var-init=zero
-    /clang:-ffp-contract=off
-  )
-
-  add_compile_definitions(_MSVC_STL_HARDENING=1)
-else()
-  set(pdfium_flags
-    -ffunction-sections
-    -fdata-sections
-    -fno-strict-aliasing
-    -fno-strict-overflow
-    -fno-delete-null-pointer-checks
-    -ftrivial-auto-var-init=zero
-    -ffp-contract=off
-  )
+if(NOT TARGET c++ OR NOT TARGET pdfium)
+  find_package(cmake-gn REQUIRED PATHS node_modules/cmake-gn)
 endif()
 
-add_compile_options(${pdfium_flags})
+project(bare_pdfium C)
 
-add_compile_definitions(
-  _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
-  _GLIBCXX_ASSERTIONS
-)
+if(NOT TARGET c++ AND NOT WIN32)
+  add_gn_target(c++ buildtools/third_party/libc++:libc++)
+endif()
 
-include(cmake/pdfium.cmake)
+if(NOT TARGET pdfium)
+  add_gn_target(pdfium :pdfium)
+
+  if(TARGET c++)
+    target_link_libraries(
+      pdfium
+      INTERFACE
+        c++
+    )
+  endif()
+
+  # PDFium's public headers are included by name rather than by their path in the tree.
+  target_include_directories(
+    pdfium
+    INTERFACE
+      "${GN_DIR}/public"
+  )
+endif()
 
 add_bare_module(bare_pdfium)
 

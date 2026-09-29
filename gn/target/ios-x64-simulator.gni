@@ -1,0 +1,3 @@
+import("//bare-pdfium/gn/platform/ios.gni")
+import("//bare-pdfium/gn/arch/x64.gni")
+import("//bare-pdfium/gn/environment/simulator.gni")

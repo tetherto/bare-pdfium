@@ -1,0 +1,2 @@
+import("//bare-pdfium/gn/platform/android.gni")
+import("//bare-pdfium/gn/arch/arm64.gni")

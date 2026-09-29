@@ -1,0 +1,5 @@
+target_os = "win"
+
+# Use the MSVC STL, as Chromium builds libc++ as a source set on Windows that
+# cannot be imported on its own.
+use_custom_libcxx = false
