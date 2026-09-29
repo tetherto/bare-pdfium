@@ -1,0 +1,80 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+   /Type /Catalog
+   /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents [ 4 0 R ]
+  /Resources <<
+    /ColorSpace <<
+      /Cs1P [ /Pattern 5 0 R ]
+    >>
+    /Pattern <<
+      /Pt1 6 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 17
+>>
+stream
+/Cs1P cs
+/Pt1 scn
+endstream
+endobj
+5 0 obj [
+  /DeviceN
+  [ /Black ]
+  /DeviceCMYK
+  7 0 R
+]
+endobj
+6 0 obj <<
+  /Type /Pattern
+  /PaintType 1
+  /PatternType 1
+  /Length -1
+>>
+stream
+endstream
+endobj
+7 0 obj <<
+  /FunctionType 4
+  /Domain [ 0 1 ]
+  /Range [ 0 1 0 1 0 1 0 1 ]
+  /Length 8
+>>
+stream
+{
+0 %c
+}
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000070 00000 n 
+0000000133 00000 n 
+0000000324 00000 n 
+0000000393 00000 n 
+0000000458 00000 n 
+0000000558 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 8
+>>
+startxref
+682
+%%EOF

@@ -1,0 +1,477 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [0 0 200 500]
+  /Contents 4 0 R
+  /Resources <<
+    /Shading <<
+      /Sha 5 0 R
+      /Shb 6 0 R
+      /Shc 7 0 R
+      /Shd 8 0 R
+      /She 9 0 R
+      /Shf 10 0 R
+      /Shg 11 0 R
+      /Shh 12 0 R
+      /Shi 13 0 R
+      /Shj 14 0 R
+      /Shk 15 0 R
+      /Shl 16 0 R
+      /Shm 17 0 R
+    >>
+  >>
+>>
+endobj
+
+4 0 obj <<
+  /Length 643
+>>
+stream
+
+q
+1 0 0 1 0 400 cm
+0 0 100 100 re W n
+/Sha sh
+Q
+
+q
+1 0 0 1 100 400 cm
+0 0 100 100 re W n
+/Shb sh
+Q
+
+q
+1 0 0 1 0 300 cm
+0 0 100 100 re W n
+/Shc sh
+Q
+
+q
+1 0 0 1 100 300 cm
+0 0 100 100 re W n
+/Shd sh
+Q
+
+q
+1 0 0 1 0 200 cm
+0 0 100 100 re W n
+/She sh
+Q
+
+q
+1 0 0 1 100 200 cm
+0 0 100 100 re W n
+/Shf sh
+Q
+
+q
+1 0 0 1 0 100 cm
+0 0 100 100 re W n
+/Shg sh
+Q
+
+q
+1 0 0 1 100 100 cm
+0 0 100 100 re W n
+/Shh sh
+Q
+
+q
+1 0 0 1 0 0 cm
+0 0 100 100 re W n
+/Shi sh
+Q
+
+q
+1 0 0 1 80 30 cm
+0 0 100 100 re W n
+/Shj sh
+Q
+q
+1 0 0 1 120 30 cm
+0 0 100 100 re W n
+/Shk sh
+Q
+q
+1 0 0 1 80 -20 cm
+0 0 100 100 re W n
+/Shl sh
+Q
+q
+1 0 0 1 155 10 cm
+0 0 100 100 re W n
+/Shm sh
+Q
+
+endstream
+endobj
+
+5 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 213
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+ff00ff
+00ffff
+80ff00
+ffff00
+>
+endstream
+endobj
+
+6 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 213
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+80ff00
+80ff00
+80ff00
+80ff00
+>
+endstream
+endobj
+
+7 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 212
+>>
+stream
+00
+012C 0128  0096 015E
+0096 00FA  012E 0127
+00FA 0096  015E 0096
+012F 0126  01C2 00FA
+01C2 015E  01C2 01C2
+015E 01C2  00FA 01C2
+0010 0253  015E 015E
+024B 0004  0244 024C
+
+64 96 FF  FF 78 78  FF FF 64  64 DC 64
+>
+endstream
+endobj
+
+8 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 201
+>>
+stream
+00
+012C 0128  0096 015E
+0096 00FA  012E 0127
+00FA 0096  015E 0096
+012F 0126  01C2 00FA
+01C2 015E  01C2 01C2
+015E 01C2  00FA 01C2
+0010 0253  015E 015E
+024B 0004  0244 024C
+
+80ff00 80ff00 80ff00 80ff00
+>
+endstream
+endobj
+
+9 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 170
+>>
+stream
+00
+0096 0096  0249 0004
+000F 0007  01C2 0096
+0246 0242  024C 0009
+01C2 01C2  0010 0251
+024F 024B  0096 01C2
+000C 0005  0010 0253
+
+64 96 FF  FF 78 78  FF FF 64  64 DC 64
+>
+endstream
+endobj
+
+10 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 212
+>>
+stream
+00
+0096 01C2  000C 0005
+0010 0253  0096 0096
+0249 0004  000F 0007
+01C2 0096  0246 0242
+024C 0009  01C2 01C2
+0010 0251  024F 024B
+0230 0025  022F 0019
+0231 001A  022A 0025
+
+64 96 FF  FF 78 78  FF FF 64  64 DC 64
+>
+endstream
+endobj
+
+11 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 159
+>>
+stream
+00
+0096 0096  0249 0004
+000F 0007  01C2 0096
+0246 0242  024C 0009
+01C2 01C2  0010 0251
+024F 024B  0096 01C2
+000C 0005  0010 0253
+
+80ff00 80ff00 80ff00 80ff00
+>
+endstream
+endobj
+
+12 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 201
+>>
+stream
+00
+0096 01C2  000C 0005
+0010 0253  0096 0096
+0249 0004  000F 0007
+01C2 0096  0246 0242
+024C 0009  01C2 01C2
+0010 0251  024F 024B
+0230 0025  022F 0019
+0231 001A  022A 0025
+
+80ff00 80ff00 80ff00 80ff00
+>
+endstream
+endobj
+
+13 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceCMYK
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 1 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 222
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+
+ff00ff00
+00ff0000
+00ff0000
+ff00ff00
+>
+endstream
+endobj
+
+14 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 159
+>>
+stream
+00
+0129 012C  00FA 0096
+015E 0096  0129 012C
+01C2 00FA  01C2 015E
+0128 012C  015E 01C2
+00FA 01C2  0128 012B
+0096 015E  0096 00FA
+
+80ff00 80ff00 80ff00 80ff00
+>
+endstream
+endobj
+
+15 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 159
+>>
+stream
+00
+015A 0158  00FA 0096
+015E 0096  0100 0157
+01C2 00FA  01C2 015E
+0100 00FC  015E 01C2
+00FA 01C2  0159 00FB
+0096 015E  0096 00FA
+
+80ff00 80ff00 80ff00 80ff00
+>
+endstream
+endobj
+
+16 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 10000 0 10000 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 159
+>>
+stream
+00
+012C 0128  0096 015E
+0096 00FA  012E 0127
+00FA 0096  015E 0096
+012F 0126  01C2 00FA
+01C2 015E  01C2 01C2
+015E 01C2  00FA 01C2
+
+80ff00 80ff00 80ff00 80ff00
+>
+endstream
+endobj
+
+17 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 40 0 40 0 1 0 1 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 214
+>>
+stream
+00
+           0000 0000  0000 5000
+0000 a000  0000 f000  5000 f000
+a000 f000  f000 f000  a000 f000
+5000 f000  0000 f000  0000 a000
+0000 5000
+5000 5000  5000 a000  a000 a000  5000 a000
+
+80ff00 80ff00 80ff00 80ff00
+>
+endstream
+endobj
+
+xref
+0 18
+0000000000 65535 f 
+0000000015 00000 n 
+0000000069 00000 n 
+0000000133 00000 n 
+0000000502 00000 n 
+0000001199 00000 n 
+0000001633 00000 n 
+0000002067 00000 n 
+0000002504 00000 n 
+0000002930 00000 n 
+0000003325 00000 n 
+0000003763 00000 n 
+0000004148 00000 n 
+0000004575 00000 n 
+0000005024 00000 n 
+0000005409 00000 n 
+0000005794 00000 n 
+0000006179 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 18
+>>
+startxref
+6613
+%%EOF

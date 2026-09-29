@@ -1,105 +1,233 @@
-# Fetches a prebuilt PDFium (bblanchon/pdfium-binaries) for the target platform
-# and exposes an imported `pdfium` target (headers + shared library). No PDFium
-# source build, no depot_tools — the release binaries are downloaded per host at
-# configure time. `add_bare_module(... INSTALL TARGET pdfium)` then ships the
-# shared library beside the `.bare`, where its rpath resolves it.
-
 include_guard(GLOBAL)
 
-set(PDFIUM_RELEASE "latest" CACHE STRING "pdfium-binaries release tag, or 'latest'")
+include(FetchContent)
 
-# Resolve the bblanchon asset name from the CMake target description. bare-make
-# asks cmake-bare for the resolved target, which reads CMAKE_OSX_ARCHITECTURES /
-# CMAKE_ANDROID_ARCH_ABI etc. — so a cross build (darwin-x64 on an arm64 runner,
-# android, ios) names its true target, not the host's CMAKE_SYSTEM_PROCESSOR.
-if(NOT DEFINED PDFIUM_ASSET)
-  bare_platform(_sys)
-  bare_arch(_arch)
-  # cmake-bare and bblanchon agree on arm64/arm/x64/x86, so no arch remap needed
+function(fetch_archive name url hash)
+  cmake_parse_arguments(PARSE_ARGV 3 ARGV "CMAKE" "SOURCE_DIR" "")
 
-  if(_sys STREQUAL "darwin")
-    set(PDFIUM_ASSET "pdfium-mac-${_arch}")
-  elseif(_sys STREQUAL "linux")
-    set(PDFIUM_ASSET "pdfium-linux-${_arch}")
-  elseif(_sys STREQUAL "android")
-    set(PDFIUM_ASSET "pdfium-android-${_arch}")
-  elseif(_sys STREQUAL "win32")
-    set(PDFIUM_ASSET "pdfium-win-${_arch}")
-  elseif(_sys STREQUAL "ios")
-    # device vs simulator: the simulator sysroot name carries "simulator"
-    if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
-      set(PDFIUM_ASSET "pdfium-ios-simulator-${_arch}")
-    else()
-      set(PDFIUM_ASSET "pdfium-ios-device-${_arch}")
-    endif()
+  if(ARGV_CMAKE)
+    set(subdir)
   else()
-    message(FATAL_ERROR "bare-pdfium: no PDFium asset mapping for '${_sys}/${_proc}'")
+    set(subdir SOURCE_SUBDIR none)
   endif()
+
+  FetchContent_Declare(
+    ${name}
+    URL "${url}"
+    URL_HASH SHA256=${hash}
+    TLS_VERIFY ON
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    EXCLUDE_FROM_ALL
+    ${subdir}
+  )
+
+  FetchContent_MakeAvailable(${name})
+
+  if(ARGV_SOURCE_DIR)
+    FetchContent_GetProperties(${name} SOURCE_DIR dir)
+    set(${ARGV_SOURCE_DIR} "${dir}" PARENT_SCOPE)
+  endif()
+endfunction()
+
+fetch_package(
+  "git:pdfium.googlesource.com/pdfium#fc46361ce75055cd549cb938fae5d6a3fe3a1a05"
+  SOURCE_DIR pdfium_dir
+)
+
+fetch_package("github:madler/zlib#da607da739fa6047df13e66a2af6b8bec7c2a498")
+
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(ABSL_MSVC_STATIC_RUNTIME ON)
+
+fetch_archive(
+  abseil
+  "https://github.com/abseil/abseil-cpp/archive/1c84143fb79e6041f3e0596df51c3ae7d7e46a8a.tar.gz"
+  9b9d244901803c11ec967825ff108d0fe46292b42945d12562509796afba2d5b
+  CMAKE
+  SOURCE_DIR abseil_dir
+)
+
+# Chromium patches abseil into hardened mode, which bounds-checks its containers.
+file(READ "${abseil_dir}/absl/base/options.h" options)
+string(REPLACE "#define ABSL_OPTION_HARDENED 0" "#define ABSL_OPTION_HARDENED 1" hardened "${options}")
+if(NOT hardened STREQUAL options)
+  file(WRITE "${abseil_dir}/absl/base/options.h" "${hardened}")
+endif()
+if(NOT hardened MATCHES "\n#define ABSL_OPTION_HARDENED 1\n")
+  message(FATAL_ERROR "abseil hardened mode could not be enabled")
 endif()
 
-if(PDFIUM_RELEASE STREQUAL "latest")
-  set(_pdfium_url "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/${PDFIUM_ASSET}.tgz")
-else()
-  set(_pdfium_url "https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_RELEASE}/${PDFIUM_ASSET}.tgz")
-endif()
+fetch_archive(
+  fast_float
+  "https://github.com/fastfloat/fast_float/archive/34164f547b7df3f5d794ff67e9f885c36819ebfc.tar.gz"
+  b319e4b8c0a6f49453783745656e6c3890c7c3bf79e2ec52b3366d52352d80a8
+  SOURCE_DIR fast_float_dir
+)
 
-set(_pdfium_dir "${CMAKE_BINARY_DIR}/pdfium")
+fetch_archive(
+  dragonbox
+  "https://github.com/jk-jeon/dragonbox/archive/beeeef91cf6fef89a4d4ba5e95d47ca64ccb3a44.tar.gz"
+  2646de322a13cdabeeff52863665a492adbd68242c66b5279a5cfefbaa301e39
+  SOURCE_DIR dragonbox_dir
+)
 
-if(NOT EXISTS "${_pdfium_dir}/include/fpdfview.h")
-  message(STATUS "bare-pdfium: fetching ${_pdfium_url}")
+find_port(libjpeg)
+
+include(${CMAKE_CURRENT_LIST_DIR}/pdfium/freetype.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/pdfium/icu.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/pdfium/harfbuzz.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/pdfium/sources.cmake)
+
+set(pdfium_include "${CMAKE_CURRENT_BINARY_DIR}/pdfium/include")
+
+file(
+  DOWNLOAD "https://raw.githubusercontent.com/chromium/chromium/156.0.8066.0/build/build_config.h"
+  "${pdfium_include}/build/build_config.h"
+  EXPECTED_HASH SHA256=c6e3501edea0833a2ef1b50f5cd27e151d58198af0523fa4d91ebd62a1be2039
+  TLS_VERIFY ON
+)
+
+file(
+  DOWNLOAD "https://raw.githubusercontent.com/chromium/chromium/156.0.8066.0/build/buildflag.h"
+  "${pdfium_include}/build/buildflag.h"
+  EXPECTED_HASH SHA256=40538acaa9b39d0f68e895503752bde340f8ea1cdb67a87bfaee865dba54c5cd
+  TLS_VERIFY ON
+)
+
+foreach(header IN ITEMS cleanup/cleanup.h container/flat_hash_set.h container/inlined_vector.h)
   file(
-    DOWNLOAD "${_pdfium_url}" "${CMAKE_BINARY_DIR}/pdfium.tgz"
-    STATUS _pdfium_status
-    SHOW_PROGRESS
+    CONFIGURE
+    OUTPUT "${pdfium_include}/third_party/abseil-cpp/absl/${header}"
+    CONTENT "#include <absl/${header}>\n"
+    @ONLY
   )
-  list(GET _pdfium_status 0 _pdfium_code)
-  if(NOT _pdfium_code EQUAL 0)
-    message(FATAL_ERROR "bare-pdfium: download failed (${_pdfium_status}) from ${_pdfium_url}")
-  endif()
-  file(MAKE_DIRECTORY "${_pdfium_dir}")
-  file(ARCHIVE_EXTRACT INPUT "${CMAKE_BINARY_DIR}/pdfium.tgz" DESTINATION "${_pdfium_dir}")
-endif()
+endforeach()
 
-set(PDFIUM_LIB_DIR "${_pdfium_dir}/lib" CACHE INTERNAL "PDFium shared-library directory")
-set(PDFIUM_LIBRARY "" CACHE INTERNAL "PDFium shared-library file")
-
-# The runtime library (loaded at run time). On Windows this is the DLL, shipped
-# under bin/; elsewhere the dylib/so under lib/.
-file(GLOB _pdfium_lib
-  "${_pdfium_dir}/lib/libpdfium.dylib"
-  "${_pdfium_dir}/lib/libpdfium.so"
-  "${_pdfium_dir}/bin/pdfium.dll"
-  "${_pdfium_dir}/lib/pdfium.dll"
-)
-list(GET _pdfium_lib 0 _pdfium_lib)
-if(NOT _pdfium_lib)
-  message(FATAL_ERROR "bare-pdfium: no libpdfium found under ${_pdfium_dir}")
-endif()
-set(PDFIUM_LIBRARY "${_pdfium_lib}" CACHE INTERNAL "PDFium shared-library file")
-
-# The released macOS dylib ships with an install-name of `./libpdfium.dylib`,
-# which the loader resolves against the CWD (and so ignores any rpath). Rewrite
-# it to `@rpath/...` so the module's INSTALL_RPATH finds it.
-if(APPLE)
-  execute_process(
-    COMMAND install_name_tool -id @rpath/libpdfium.dylib "${_pdfium_lib}"
-  )
-endif()
-
-add_library(pdfium SHARED IMPORTED GLOBAL)
-set_target_properties(
-  pdfium
-  PROPERTIES
-    IMPORTED_LOCATION "${_pdfium_lib}"
-    INTERFACE_INCLUDE_DIRECTORIES "${_pdfium_dir}/include"
+file(
+  CONFIGURE
+  OUTPUT "${pdfium_include}/third_party/fast_float/src/include/fast_float/fast_float.h"
+  CONTENT "#include \"${fast_float_dir}/include/fast_float/fast_float.h\"\n"
+  @ONLY
 )
 
-# Windows links against the import library (.lib), not the DLL.
+file(
+  CONFIGURE
+  OUTPUT "${pdfium_include}/third_party/dragonbox/src/include/dragonbox/dragonbox.h"
+  CONTENT "#include \"${dragonbox_dir}/include/dragonbox/dragonbox.h\"\n"
+  @ONLY
+)
+
+set(pdfium_sources
+  ${pdfium_fxcrt}
+  ${pdfium_fdrm}
+  ${pdfium_fxcodec}
+  ${pdfium_fxge}
+  ${pdfium_cmaps}
+  ${pdfium_font}
+  ${pdfium_page}
+  ${pdfium_parser}
+  ${pdfium_render}
+  ${pdfium_edit}
+  ${pdfium_fpdfdoc}
+  ${pdfium_fpdftext}
+  ${pdfium_fpdfsdk}
+  ${pdfium_formfiller}
+  ${pdfium_pwl}
+  ${pdfium_fxjs}
+  ${pdfium_fx_agg}
+  ${pdfium_fx_lcms2}
+  ${pdfium_fx_libopenjpeg}
+)
+
 if(WIN32)
-  file(GLOB _pdfium_implib "${_pdfium_dir}/lib/pdfium.dll.lib" "${_pdfium_dir}/lib/pdfium.lib")
-  list(GET _pdfium_implib 0 _pdfium_implib)
-  if(NOT _pdfium_implib)
-    message(FATAL_ERROR "bare-pdfium: no PDFium import library found under ${_pdfium_dir}/lib")
-  endif()
-  set_target_properties(pdfium PROPERTIES IMPORTED_IMPLIB "${_pdfium_implib}")
+  list(APPEND pdfium_sources ${pdfium_win32})
+else()
+  list(APPEND pdfium_sources ${pdfium_posix})
+endif()
+
+if(APPLE)
+  list(APPEND pdfium_sources ${pdfium_apple})
+elseif(ANDROID)
+  list(APPEND pdfium_sources ${pdfium_android})
+elseif(LINUX)
+  list(APPEND pdfium_sources ${pdfium_linux})
+endif()
+
+list(TRANSFORM pdfium_sources PREPEND "${pdfium_dir}/")
+
+add_library(pdfium STATIC)
+
+target_sources(
+  pdfium
+  PRIVATE
+    ${pdfium_sources}
+)
+
+target_include_directories(
+  pdfium
+  PUBLIC
+    ${pdfium_dir}/public
+  PRIVATE
+    ${pdfium_dir}
+    ${pdfium_include}
+)
+
+target_compile_definitions(
+  pdfium
+  PUBLIC
+    PDF_USE_AGG
+  PRIVATE
+    OPJ_STATIC
+    USE_SYSTEM_ICUUC
+    USE_SYSTEM_LIBJPEG
+    USE_SYSTEM_ZLIB
+)
+
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT MATCHES "MSVC")
+  target_compile_options(
+    pdfium
+    PRIVATE
+      /utf-8
+  )
+endif()
+
+target_link_libraries(
+  pdfium
+  PRIVATE
+    freetype
+    harfbuzz
+    icuuc
+    jpeg
+    zlibstatic
+    absl::cleanup
+    absl::flat_hash_set
+    absl::inlined_vector
+)
+
+if(APPLE)
+  target_link_libraries(
+    pdfium
+    PRIVATE
+      "-framework CoreFoundation"
+      "-framework CoreGraphics"
+  )
+elseif(WIN32)
+  target_compile_definitions(
+    pdfium
+    PRIVATE
+      NOMINMAX
+      UNICODE
+      _UNICODE
+      _CRT_SECURE_NO_DEPRECATE
+      WINVER=0x0A00
+      _WIN32_WINNT=0x0A00
+  )
+
+  target_link_libraries(
+    pdfium
+    PRIVATE
+      advapi32
+      gdi32
+      user32
+  )
 endif()

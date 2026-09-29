@@ -8,8 +8,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # android-ia32 is omitted: pdfium-binaries ships no android-x86 build,
-        # and cmake/pdfium.cmake fetches its PDFium per host.
         include:
           - os: ubuntu-22.04
             platform: linux
@@ -26,6 +24,9 @@ jobs:
           - os: ubuntu-24.04
             platform: android
             arch: arm
+          - os: ubuntu-24.04
+            platform: android
+            arch: ia32
           - os: macos-14
             platform: darwin
             arch: x64

@@ -1,0 +1,93 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents 4 0 R
+  /Group <<
+    /Type /Group
+    /S /Transparency
+  >>
+  /MediaBox [0 0 40 40]
+  /Resources <<
+    /ExtGState <<
+      /GSMask <<
+        /SMask <<
+          /Type /Mask
+          /S /Alpha
+          /G 5 0 R
+        >>
+      >>
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 154
+>>
+stream
+q
+  1 0 0 1 5 5 cm
+
+  % Red square.
+  1 0 0 rg
+  0 0 30 30 re
+  f
+
+  % Blue square with soft mask dictionary.
+  /GSMask gs
+  0 0 1 rg
+  0 0 30 30 re
+  f
+Q
+endstream
+endobj
+
+% Soft mask dictionary with a central hole.
+5 0 obj <<
+  /Type /XObject
+  /Subtype /Form
+  /BBox [0 0 30 30]
+  /Group <<
+    /Type /Group
+    /S /Transparency
+    /I true
+  >>
+  /Length 40
+>>
+stream
+q
+  0 0 0 RG
+  15 w
+  0 0 30 30 re
+  S
+Q
+endstream
+endobj
+
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000441 00000 n 
+0000000693 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 6
+>>
+startxref
+907
+%%EOF

@@ -1,0 +1,108 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 4
+  /Kids [3 0 R 4 0 R 5 0 R 6 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Annots [7 0 R 8 0 R]
+  /MediaBox [0 0 612 792]
+  /Parent 2 0 R
+  /Rotate 0
+>>
+endobj
+4 0 obj <<
+  /Type /Page
+  /Annots [7 0 R 8 0 R]
+  /MediaBox [0 0 792 612]
+  /Parent 2 0 R
+  /Rotate 90
+>>
+endobj
+5 0 obj <<
+  /Type /Page
+  /Annots [7 0 R 8 0 R]
+  /MediaBox [0 0 612 792]
+  /Parent 2 0 R
+  /Rotate 180
+>>
+endobj
+6 0 obj <<
+  /Type /Page
+  /Annots [7 0 R 8 0 R]
+  /MediaBox [0 0 792 612]
+  /Parent 2 0 R
+  /Rotate 270
+>>
+endobj
+7 0 obj <<
+  /Type /Annot
+  /Subtype /Line
+  /AP <<
+    /N 9 0 R
+  >>
+  % NoRotate
+  /F 16
+  /L [100 50 100 150]
+  /P 3 0 R
+  /Rect [90 370 270 500]
+>>
+endobj
+8 0 obj <<
+  /Type /Annot
+  /Subtype /Line
+  /AP <<
+    /N 9 0 R
+  >>
+  /F 0
+  /L [100 50 100 150]
+  /P 3 0 R
+  /Rect [190 470 370 600]
+>>
+endobj
+9 0 obj <<
+  /Type /XObject
+  /Subtype /Form
+  /FormType 1
+  /BBox [0 0 360 130]
+  /Length 61
+>>
+stream
+10 w
+1 0 0 RG
+30 65 m
+150 65 l
+S
+120 45 m
+150 65 l
+120 85 l
+S
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000149 00000 n 
+0000000262 00000 n 
+0000000376 00000 n 
+0000000491 00000 n 
+0000000606 00000 n 
+0000000765 00000 n 
+0000000911 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 10
+>>
+startxref
+1094
+%%EOF

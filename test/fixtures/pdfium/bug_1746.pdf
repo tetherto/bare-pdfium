@@ -1,0 +1,138 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /MediaBox [0 0 200 200]
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents 4 0 R
+  /Resources <<
+    /ExtGState <<
+      /GS0 8 0 R
+    >>
+    /Font <<
+      /F1 5 0 R
+    >>
+    /XObject <<
+      /Img 9 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 113
+>>
+stream
+q
+/GS0 gs
+q
+0 1 0 rg
+BT
+/F1 2 Tf
+1 0 0 1 50 50 Tm
+(a)Tj
+ET
+Q
+q
+0 0 1 rg
+BT
+/F1 2 Tf
+1 0 0 1 72 80 Tm
+(a)Tj
+ET
+Q
+Q
+endstream
+endobj
+5 0 obj <<
+  /Type /Font
+  /Subtype /Type3
+  /CharProcs <<
+    /a0 7 0 R
+  >>
+  /Encoding 6 0 R
+  /FirstChar 97
+  /FontBBox [0 0 1000 1000]
+  /FontMatrix [1 0 0 1 0 0]
+  /LastChar 97
+  /Widths [60]
+>>
+endobj
+6 0 obj <<
+  /Type /Encoding
+  /BaseEncoding /WinAnsiEncoding
+  /Differences [97 /a0]
+>>
+endobj
+7 0 obj <<
+  /Length 92
+>>
+stream
+50 0 4 -1 48 45 d1
+q
+4 -1 m
+4 45 l
+48 45 l
+48 -1 l
+h
+W n
+q
+44 0 0 46 4.1 -1.1 cm
+/Img Do
+Q
+Q
+endstream
+endobj
+8 0 obj <<
+  /Type /ExtGState
+  /CA 0.5
+  /ca 0.5
+>>
+endobj
+9 0 obj <<
+  /Type /XObject
+  /Subtype /Image
+  /BitsPerComponent 1
+  /Decode [1 0]
+  /DecodeParms [null <</Columns 44 /K -1>>]
+  /Filter [/ASCIIHexDecode /CCITTFaxDecode]
+  /Height 46
+  /ImageMask true
+  /Width 44
+  /Length 178
+>>
+stream
+26a08680de081e11e187840830f4137a4df0ef4dbedbffff6ffdaf0c2f1f
+fff21b34c82e33044e7c11a09c205e105e97a5e97a5ffa5fe0a3f5ffafff
+b5c9aaa30bed27adb4ad70da4da5b6128f0c426b216818500100100a
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000157 00000 n 
+0000000365 00000 n 
+0000000531 00000 n 
+0000000739 00000 n 
+0000000835 00000 n 
+0000000979 00000 n 
+0000001039 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 10
+>>
+startxref
+1474
+%%EOF

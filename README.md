@@ -172,23 +172,42 @@ Requires the Bare toolchain (`npm i -g bare-make`) and CMake ≥ 3.31.
 
 ```sh
 npm install
-bare-make generate   # downloads a prebuilt PDFium for the host target
+bare-make generate   # fetches PDFium and its dependencies at pinned revisions
 bare-make build
 bare-make install    # writes prebuilds/<target>/
 npm test
 ```
 
-`bare-make generate` fetches PDFium from
-[bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) for the
-target (override the release with `-DPDFIUM_RELEASE=chromium/<n>`), so the first
-configure needs network access. The released binaries are shared libraries;
-`add_bare_module(... INSTALL TARGET pdfium)` ships the shared library beside the
-built `.bare`, where the module's rpath resolves it.
+PDFium is compiled from source with CMake and linked statically, so every
+prebuild is a single `.bare`. `cmake/pdfium.cmake` pins PDFium to a commit on its
+`chromium/<n>` branch and each dependency to the revision that branch's `DEPS`
+uses; `cmake/pdfium/sources.cmake` mirrors the sources of PDFium's GN targets
+with XFA, V8 and Skia off. Archives are verified against pinned SHA-256 hashes.
+The first configure needs network access.
+
+`test/render.js` compares renders against the expected PNGs from PDFium's own
+pixel tests, byte for byte.
+
+### Updating PDFium
+
+1. Pick the `chromium/<n>` branch, pin its head commit in `cmake/pdfium.cmake`,
+   and update every dependency pin and hash to the revisions in that commit's
+   `DEPS` (Chromium's abseil and ICU forks name their upstream in
+   `README.chromium`).
+2. `bare-make generate`, then check the source lists against PDFium's GN files
+   and regenerate the reference renders:
+
+   ```sh
+   bare scripts/pdfium-sources.js build/_deps/git+pdfium.googlesource.com+pdfium-src
+   bare scripts/pdfium-fixtures.js build/_deps/git+pdfium.googlesource.com+pdfium-src
+   ```
+
+   Review any page the fixture script reports as dropped before accepting it.
 
 ## Prebuilds
 
 `.github/workflows/prebuild.yml` builds prebuilds for every target
-(linux x64/arm64, android arm64/arm/x64, darwin x64/arm64, ios arm64 +
+(linux x64/arm64, android arm64/arm/x64/ia32, darwin x64/arm64, ios arm64 +
 simulators, win32 x64/arm64) via the holepunch `compile-prebuilds` actions, then
 merges them. Run it from the Actions tab (`workflow_dispatch`).
 `.github/workflows/publish.yml` runs when a `v*` tag is pushed: it builds the same
@@ -196,15 +215,13 @@ set and publishes it to npm through trusted publishing (no npm token), then
 creates a GitHub release. Tag the commit whose `package.json` has that version. A
 tag newer than npm's current `latest` publishes as `latest`; an older one
 publishes as `release-<major>.<minor>`.
-`android-ia32` is omitted because pdfium-binaries publishes no `android-x86`
-build.
 
 ## Licensing
 
 This wrapper is Apache-2.0. The bundled PDFium (shipped in `prebuilds/`) is
-BSD-3-Clause (© The PDFium Authors); the binaries come from bblanchon/pdfium-
-binaries (MIT) and embed further permissive components. See `NOTICE.md` — a shipping
-application must carry these attributions.
+BSD-3-Clause and Apache-2.0 (© The PDFium Authors) and statically links further permissive
+components. See `NOTICE.md` — a shipping application must carry these
+attributions.
 
 ## Why not pdf.js?
 

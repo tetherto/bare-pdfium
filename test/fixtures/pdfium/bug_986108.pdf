@@ -1,0 +1,140 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [0 0 200 200]
+  /Contents 4 0 R
+  /Resources <<
+    /ProcSet [/PDF /Text]
+    /ExtGState <<
+      /GS0 5 0 R
+    >>
+    /XObject <<
+      /Fm0 6 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 19
+>>
+stream
+q
+/GS0 gs
+/Fm0 Do
+Q
+endstream
+endobj
+5 0 obj <<
+  /Type /ExtGState
+  /OP false
+  /op false
+  /AIS false
+  /BM /Normal
+  /OPM 0
+  /CA 1.0
+  /SA true
+  /ca 1.0
+  /SMask 7 0 R
+>>
+endobj
+6 0 obj <<
+  /Subtype /Form
+  /Length 18
+>>
+stream
+q
+0 0 50 60 re f
+Q
+endstream
+endobj
+7 0 obj <<
+  /Type /Mask
+  /BC [0.0]
+  /S /Luminosity
+  /G 8 0 R
+>>
+endobj
+8 0 obj <<
+  /Subtype /Form
+  /BBox [0 411 621 -10]
+  /Resources <<
+    /XObject <<
+      /Fm0 9 0 R
+    >>
+  >>
+/Length 31
+>>
+stream
+q
+0 410 500 -440 re f
+/Fm0 Do
+Q
+endstream
+endobj
+9 0 obj <<
+  /Subtype /Form
+  /Resources <<
+    /Shading <<
+      /Sh0 10 0 R
+    >>
+  >>
+  /Length 11
+>>
+stream
+q
+/Sh0 sh
+Q
+endstream
+endobj
+10 0 obj <<
+  /ShadingType 2
+  /ColorSpace /DeviceRGB
+  /Coords [0.0 0.0 1.0 0.0]
+  /BBox [-0.1 -0.9 1.1 0.87]
+  /Extend [true true]
+  /Function 11 0 R
+  /Domain [0.0 1.0]
+>>
+endobj
+11 0 obj <<
+  /FunctionType 2
+  /Domain [0.0 1.0]
+  /C0 [0.8 0.1 0.2]
+  /C1 [0.2 0.025 0.05]
+  /N 1
+>>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000355 00000 n 
+0000000426 00000 n 
+0000000572 00000 n 
+0000000659 00000 n 
+0000000734 00000 n 
+0000000917 00000 n 
+0000001059 00000 n 
+0000001241 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 12
+>>
+startxref
+1351
+%%EOF

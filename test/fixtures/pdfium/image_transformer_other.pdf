@@ -1,0 +1,144 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents 4 0 R
+  /MediaBox [0 0 200 200]
+  /Resources <<
+    /ColorSpace <<
+      /CS0 5 0 R
+    >>
+    /XObject <<
+      /ImMonoPalette 6 0 R
+      /ImMono 7 0 R
+      /ImColor 8 0 R
+      /ImColorWithMask 9 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 164
+>>
+stream
+q
+-16 64 64 0 20 20 cm
+/ImMonoPalette Do
+Q
+q
+16 64 64 0 120 20 cm
+/ImMono Do
+Q
+q
+16 64 64 16 20 120 cm
+/ImColor Do
+Q
+q
+16 64 -64 16 120 120 cm
+/ImColorWithMask Do
+Q
+endstream
+endobj
+5 0 obj [
+  /Indexed
+  /DeviceGray
+  0
+  <cc>
+]
+endobj
+6 0 obj <<
+  /Type /XObject
+  /Subtype /Image
+  /BitsPerComponent 1
+  /ColorSpace 5 0 R
+  /Height 4
+  /Width 4
+  /Length 4
+>>
+stream
+0000
+endstream
+endobj
+7 0 obj <<
+  /Type /XObject
+  /Subtype /Image
+  /Width 4
+  /Height 4
+  /BitsPerComponent 8
+  /ColorSpace /DeviceGray
+  /Filter /ASCIIHexDecode
+  /Length 35
+>>
+stream
+00000000
+33333333
+99999999
+cccccccc
+endstream
+endobj
+8 0 obj <<
+  /Type /XObject
+  /Subtype /Image
+  /BitsPerComponent 8
+  /ColorSpace /DeviceRGB
+  /Filter /ASCIIHexDecode
+  /Height 4
+  /Width 4
+  /Length 99
+>>
+stream
+ff0000ff0000ff0000ff0000
+ff0000ff0000ff0000ff0000
+00ff0000ff0000ff0000ff00
+00ff0000ff0000ff0000ff00
+endstream
+endobj
+9 0 obj <<
+  /Type /XObject
+  /Subtype /Image
+  /BitsPerComponent 8
+  /ColorSpace /DeviceRGB
+  /Filter /ASCIIHexDecode
+  /Height 4
+  /Width 4
+  /Mask [0 255 0 0 0 0]
+  /Length 99
+>>
+stream
+ff0000ff0000ff0000ff0000
+ff0000ff0000ff0000ff0000
+00ff0000ff0000ff0000ff00
+00ff0000ff0000ff0000ff00
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000410 00000 n 
+0000000627 00000 n 
+0000000682 00000 n 
+0000000837 00000 n 
+0000001056 00000 n 
+0000001338 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 10
+>>
+startxref
+1644
+%%EOF
