@@ -14,23 +14,27 @@ limitations under the License.
 
 ## Third-party components
 
-This product's prebuilt binaries bundle PDFium and its dependencies.
+This product's prebuilt binaries statically link PDFium and the components
+below, built by PDFium's GN build. Their license texts must
+accompany any redistribution of the compiled library.
 
-### PDFium
+| Component     | Copyright                             | License                                                        |
+| ------------- | ------------------------------------- | -------------------------------------------------------------- |
+| PDFium        | The PDFium Authors                    | BSD-3-Clause and Apache-2.0                                    |
+| AGG 2.3       | Maxim Shemanarev                      | AGG 2.3 permissive notice                                      |
+| Little CMS    | Marti Maria Saguer                    | MIT                                                            |
+| OpenJPEG      | The OpenJPEG contributors             | BSD-2-Clause                                                   |
+| FreeType      | The FreeType Project                  | FreeType License (FTL)                                         |
+| HarfBuzz      | The HarfBuzz Authors                  | MIT ("Old MIT")                                                |
+| ICU           | Unicode, Inc. and others              | Unicode License v3                                             |
+| Abseil        | The Abseil Authors                    | Apache-2.0                                                     |
+| zlib          | Jean-loup Gailly and Mark Adler       | Zlib                                                           |
+| libjpeg-turbo | The libjpeg-turbo Project and the IJG | IJG, BSD-3-Clause and Zlib                                     |
+| fast_float    | The fast_float authors                | Apache-2.0, MIT or BSL-1.0                                     |
+| Dragonbox     | Junekey Jeon                          | Apache-2.0 with LLVM exceptions or BSL-1.0                     |
+| LLVM          | The LLVM Project                      | Apache-2.0 with LLVM exceptions (libc++, compiler-rt builtins) |
 
-Copyright The PDFium Authors. Licensed under the BSD 3-Clause License.
-<https://pdfium.googlesource.com/pdfium/>
+Portions of this software are copyright © 2026 The FreeType Project
+(www.freetype.org). All rights reserved.
 
-### pdfium-binaries
-
-The prebuilt PDFium distribution fetched at build time. Copyright 2014-2025
-Benoit Blanchon. Licensed under the MIT License.
-<https://github.com/bblanchon/pdfium-binaries>
-
-### Components bundled by PDFium
-
-PDFium bundles further third-party components under permissive licenses
-(abseil, freetype, libjpeg-turbo, libpng, lcms, libopenjpeg, icu, zlib,
-simdutf, agg23, fast_float, llvm-libc). Their license texts ship inside the
-pdfium-binaries archive under licenses/ and must accompany any redistribution
-of the compiled library.
+This software is based in part on the work of the Independent JPEG Group.

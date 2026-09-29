@@ -30,8 +30,14 @@ jobs:
     name: Test / ${{ matrix.platform }}
     steps:
       - uses: holepunchto/actions/bare-base@v1
+      - uses: ./.github/actions/pdfium
+        id: pdfium
+        with:
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
           arch: ${{ matrix.arch }}
+          flags: ${{ steps.pdfium.outputs.flags }}
       - run: npm test

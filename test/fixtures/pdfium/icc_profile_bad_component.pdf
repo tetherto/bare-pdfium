@@ -1,0 +1,62 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents [4 0 R]
+  /MediaBox [0 0 100 100]
+  /Resources <<
+    /ColorSpace <<
+      /CS0 [/ICCBased 5 0 R]
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 37
+>>
+stream
+q
+/CS0 cs
+1 0 0 sc
+0 0 100 100 re f
+Q
+endstream
+endobj
+% This dummy ICC profile has the right characteristics so DetectSRGB() returns
+% true, but the component count is 1 instead of 3.
+5 0 obj <<
+  /Filter [/ASCII85Decode /FlateDecode]
+  /N 1
+  /Length 66
+>>
+stream
+GhQ(m(^5Nu'F201.<rEbRi,CuRHYXS)3+pC-l<,_?keQO;(r>H_'g.JJ-u>hNJc`~>
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000304 00000 n 
+0000000523 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 6
+>>
+startxref
+688
+%%EOF

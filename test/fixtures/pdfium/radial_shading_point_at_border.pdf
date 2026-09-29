@@ -1,0 +1,66 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [0 0 300 400]
+  /Contents 4 0 R
+  /Resources <<
+    /Shading <<
+      /R9 5 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 46
+>>
+stream
+50 0 0 50 150 100 cm
+10 10 280 380 re f
+/R9 sh
+endstream
+endobj
+5 0 obj <<
+  /ShadingType 3
+  /ColorSpace /DeviceRGB
+  % Start is a point on the border of end
+  /Coords [-.223151 -.974784 0.0 0.0 0.0 1.0]
+  /Function 6 0 R
+  /Extend [true true]
+ >>
+endobj
+6 0 obj <<
+  /FunctionType 2
+  /Domain [0.0 1.0]
+  /C0 [0.1 0.2 0.8]
+  /C1 [0.05 0.01 0.4]
+  /N 1
+>>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000051 00000 n 
+0000000114 00000 n 
+0000000269 00000 n 
+0000000367 00000 n 
+0000000559 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 7
+>>
+startxref
+667
+%%EOF

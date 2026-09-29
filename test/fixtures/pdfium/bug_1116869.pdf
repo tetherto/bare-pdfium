@@ -1,0 +1,135 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents 5 0 R
+  /MediaBox [0 0 400 400]
+  /Resources <<
+    /Font <<
+      /F1 4 0 R
+    >>
+    /Pattern <<
+      /P1 6 0 R
+    >>
+    /XObject <<
+      /X10 9 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Type /Font
+  /Subtype /Type1
+  /BaseFont /Times-Roman
+>>
+endobj
+5 0 obj <<
+  /Length 7
+>>
+stream
+/X10 Do
+endstream
+endobj
+6 0 obj <<
+  /Type /Pattern
+  /PatternType 2
+  /Shading 7 0 R
+>>
+endobj
+7 0 obj <<
+  /ShadingType 2
+  /ColorSpace /DeviceCMYK
+  /Coords [0.0 0.0 1.0 0.0]
+  /Extend [true true]
+  /Function 8 0 R
+>>
+endobj
+8 0 obj <<
+  /FunctionType 0
+  /BitsPerSample 1
+  /Domain [0.0 1.0]
+  /Filter /ASCIIHexDecode
+  /Range [0.0 1.0 0.0 1.0 0.0 1.0 0.0 1.0]
+  /Size [2]
+  /Length 2
+>>
+stream
+ff
+endstream
+endobj
+9 0 obj <<
+  /Subtype /Form
+  /Resources <<
+    /ExtGState <<
+      /G7 10 0 R
+    >>
+  >>
+  /Length 23
+>>
+stream
+q
+0 0 m
+3 31 l
+/G7 gs
+f
+endstream
+endobj
+10 0 obj <<
+  /SMas <<
+    /G 11 0 R
+  >>
+>>
+endobj
+11 0 obj <<
+  /Length 131
+>>
+stream
+1 1 2 2 re
+W
+100 100 200 200 re s
+W
+0 g
+/F1 12 Tf
+0 0 60 30 re
+W
+m 100 100
+130 150 200 200 250 230 c
+/Pattern cs
+/P1 scn
+(ABC) Tj
+Q
+endstream
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000362 00000 n 
+0000000440 00000 n 
+0000000498 00000 n 
+0000000570 00000 n 
+0000000702 00000 n 
+0000000893 00000 n 
+0000001048 00000 n 
+0000001100 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 12
+>>
+startxref
+1285
+%%EOF

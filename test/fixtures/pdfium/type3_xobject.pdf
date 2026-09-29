@@ -1,0 +1,96 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents 4 0 R
+  /MediaBox [0 0 200 200]
+  /Resources <<
+    /ProcSet [/PDF /Text]
+    /Font <<
+      /F1 5 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 38
+>>
+stream
+BT
+/F1 16 Tf
+1 0 0 1 40 40 Tm
+(A)Tj
+ET
+endstream
+endobj
+5 0 obj <<
+  /Type /Font
+  /Subtype /Type3
+  /CharProcs <<
+    /C1 7 0 R
+  >>
+  /Encoding <<
+    /Type /Encoding
+    /Differences [65 /C1]
+  >>
+  /FirstChar 65
+  /FontBBox [0 0 32 52]
+  /LastChar 65
+  /Resources <<
+    /XObject <<
+      /X1 6 0 R
+    >>
+  >>
+  /Widths [100]
+>>
+endobj
+6 0 obj <<
+  /Type /XObject
+  /Subtype /Image
+  /Width 50
+  /Height 50
+  /BitsPerComponent 8
+  /ColorSpace /DeviceRGB
+  /Filter [/ASCIIHexDecode /FlateDecode]
+  /Length 70
+>>
+stream
+789cedc2310d00000c03a07f2aaab3ea7bcf03842655555555555555f5bf01cc7818dc
+endstream
+endobj
+7 0 obj <<
+  /Length 6
+>>
+stream
+/X1 Do
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000309 00000 n 
+0000000399 00000 n 
+0000000684 00000 n 
+0000000954 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 8
+>>
+startxref
+1011
+%%EOF

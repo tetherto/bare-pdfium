@@ -1,0 +1,68 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents [4 0 R]
+  /MediaBox [0 0 200 200]
+  /Resources <<
+    /XObject <<
+      /X1 5 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 29
+>>
+stream
+q
+200 0 0 200 0 0 cm
+/X1 Do
+Q
+endstream
+endobj
+5 0 obj <<
+  /Type /XObject
+  /Subtype /Image
+  % The image needs to have a bitmap size that's at least `kHugeImageSize`.
+  /Width 4000
+  /Height 4000
+  /BitsPerComponent 1
+  /ColorSpace /DeviceGray
+  /Filter [/ASCIIHexDecode /JBIG2Decode]
+  /Mask [255 255]
+  /Length 190
+>>
+stream
+000000003000010000001300000dea00000353000017110000171151000000000001260001000000
+3500000dea000003530000000000000000020003fffdff02fefefeff7f86530fb6c922cfff7fff7f
+ff7fff7fff7fff7fff7fff7fffac
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000288 00000 n 
+0000000369 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 6
+>>
+startxref
+859
+%%EOF

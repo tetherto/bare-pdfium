@@ -1,0 +1,117 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [0 0 720 540]
+  /Contents 4 0 R
+  /Resources <<
+    /ProcSet [/PDF /ImageB /ImageC /ImageI]
+    /Pattern <<
+      /P25 5 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 56
+>>
+stream
+q
+/Pattern cs /P25 scn
+461.25 480.37 253.13 31.5 re
+f*
+Q
+endstream
+endobj
+5 0 obj <<
+  /PatternType 2
+  /Shading <<
+    /Coords [587.81 511.88 587.81 448.88]
+    /Function 6 0 R
+    /Extend [true true]
+    /ShadingType 2
+    /ColorSpace /DeviceRGB
+  >>
+>>
+endobj
+6 0 obj <<
+  /FunctionType 3
+  /Functions [7 0 R 8 0 R 9 0 R 10 0 R 11 0 R]
+  /Encode [1 0 1 0 1 0 1 0 1 0]
+  /Bounds [0.325 0.5 0.5 0.675]
+  /Domain [0 1]
+>>
+endobj
+7 0 obj <<
+  /FunctionType 2
+  /N 1
+  /C0 [0.81569 0.81569 0.81569]
+  /C1 [0.92941 0.92941 0.92941]
+  /Domain [0 1]
+>>
+endobj
+8 0 obj <<
+  /FunctionType 2
+  /N 1
+  /C0 [0.73725 0.73725 0.73725]
+  /C1 [0.81569 0.81569 0.81569]
+  /Domain [0 1]
+>>
+endobj
+9 0 obj <<
+  /FunctionType 2
+  /N 1
+  /C0 [0.73725 0.73725 0.73725]
+  /C1 [0.73725 0.73725 0.73725]
+  /Domain [0 1]
+>>
+endobj
+10 0 obj <<
+  /FunctionType 2
+  /N 1
+  /C0 [0.81569 0.81569 0.81569]
+  /C1 [0.73725 0.73725 0.73725]
+  /Domain [0 1]
+>>
+endobj
+11 0 obj <<
+  /FunctionType 2
+  /N 1
+  /C0 [0.92941 0.92941 0.92941]
+  /C1 [0.81569 0.81569 0.81569]
+  /Domain [0 1]
+>>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000331 00000 n 
+0000000439 00000 n 
+0000000628 00000 n 
+0000000794 00000 n 
+0000000920 00000 n 
+0000001046 00000 n 
+0000001172 00000 n 
+0000001299 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 12
+>>
+startxref
+1426
+%%EOF

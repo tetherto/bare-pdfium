@@ -1,0 +1,159 @@
+name: PDFium
+description: Fetch PDFium with gclient and build it with GN for cmake-gn
+
+inputs:
+  platform:
+    description: The platform to build for
+  arch:
+    description: The architecture to build for
+  tags:
+    description: Additional prebuild tags, such as -simulator
+    default: ''
+
+outputs:
+  flags:
+    description: The bare-make flags pointing cmake-gn at the build
+    value: ${{ steps.posix.outputs.flags || steps.win32.outputs.flags }}
+
+runs:
+  using: composite
+  steps:
+    - if: ${{ runner.os != 'Windows' }}
+      id: posix
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        ARCH: ${{ inputs.arch }}
+        TARGET: ${{ inputs.platform }}-${{ inputs.arch }}${{ inputs.tags }}
+      run: |
+        set -euo pipefail
+
+        git clone --quiet https://chromium.googlesource.com/chromium/tools/depot_tools.git "$RUNNER_TEMP/depot_tools"
+        export PATH="$RUNNER_TEMP/depot_tools:$PATH"
+        echo "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
+
+        case "$PLATFORM" in
+          darwin) os=mac ;;
+          *) os=$PLATFORM ;;
+        esac
+
+        root="$RUNNER_TEMP/pdfium"
+        mkdir -p "$root/pdfium"
+        ln -s "$GITHUB_WORKSPACE" "$root/pdfium/bare-pdfium"
+
+        cat > "$root/.gclient" <<EOF
+        solutions = [
+          {
+            "name": "pdfium/bare-pdfium",
+            "url": "https://github.com/$GITHUB_REPOSITORY.git",
+            "deps_file": "DEPS",
+            "managed": False,
+            "custom_deps": {},
+            "custom_vars": {
+              "checkout_configuration": "minimal",
+              "checkout_android": $([ "$os" = android ] && echo True || echo False),
+            },
+          },
+        ]
+        target_os = ["$os"]
+        EOF
+
+        cd "$root"
+        gclient sync --no-history --shallow --jobs 8
+        ln -s pdfium/buildtools buildtools
+
+        cd pdfium
+        git apply bare-pdfium/patches/*.patch
+
+        flags="-D GN_DIR=$root/pdfium -D GN_OUT_DIR=$root/pdfium/out/$TARGET"
+
+        # Build the addon against the same Debian sysroot as PDFium, which also
+        # lets linux-arm64 cross-compile from the x64 host Chromium's clang needs.
+        if [ "$os" = linux ]; then
+          python3 build/linux/sysroot_scripts/install-sysroot.py --arch="$ARCH"
+          case "$ARCH" in
+            x64) sysroot=amd64 ;;
+            *) sysroot=$ARCH ;;
+          esac
+          flags="$flags -D CMAKE_SYSROOT=$root/pdfium/build/linux/debian_bullseye_$sysroot-sysroot"
+        fi
+
+        mkdir -p "out/$TARGET"
+        cat > "out/$TARGET/args.gn" <<EOF
+        import("//bare-pdfium/gn/pdfium.gni")
+        import("//bare-pdfium/gn/mode/release.gni")
+        import("//bare-pdfium/gn/target/$TARGET.gni")
+        EOF
+
+        gn gen "out/$TARGET"
+        autoninja -C "out/$TARGET" pdfium buildtools/third_party/libc++:libc++
+
+        echo "flags=$flags" >> "$GITHUB_OUTPUT"
+
+    - if: ${{ runner.os == 'Windows' }}
+      id: win32
+      shell: pwsh
+      env:
+        TARGET: ${{ inputs.platform }}-${{ inputs.arch }}${{ inputs.tags }}
+        DEPOT_TOOLS_WIN_TOOLCHAIN: 0
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+
+        # Chromium's build pins a Windows SDK newer than the one runners ship.
+        $sdk = Join-Path $env:RUNNER_TEMP winsdksetup.exe
+        Invoke-WebRequest https://download.microsoft.com/download/06fc99ac-527e-451e-a536-8866695a2e7e/KIT_BUNDLE_WINDOWSSDK_MEDIACREATION/winsdksetup.exe -OutFile $sdk
+        if ((Get-FileHash $sdk -Algorithm SHA256).Hash -ne '02988EA51EAB2A2DB53E19735E51C97A6D221ADA74B9174FA0868870B9403BA0') {
+          throw 'Windows SDK installer does not match its checksum'
+        }
+        $install = Start-Process $sdk -ArgumentList '/q', '/norestart' -Wait -PassThru
+        if ($install.ExitCode -ne 0 -or -not (Test-Path "${env:ProgramFiles(x86)}/Windows Kits/10/Include/10.0.28000.0/um")) {
+          throw "Windows SDK 10.0.28000 did not install (exit code $($install.ExitCode))"
+        }
+
+        $tools = Join-Path $env:RUNNER_TEMP depot_tools
+        git clone --quiet https://chromium.googlesource.com/chromium/tools/depot_tools.git $tools
+        $env:PATH = "$tools;$env:PATH"
+        Add-Content $env:GITHUB_PATH $tools
+        Add-Content $env:GITHUB_ENV 'DEPOT_TOOLS_WIN_TOOLCHAIN=0'
+
+        $root = Join-Path $env:RUNNER_TEMP pdfium
+        New-Item -ItemType Directory -Force (Join-Path $root pdfium) | Out-Null
+        New-Item -ItemType Junction -Path (Join-Path $root pdfium/bare-pdfium) -Target $env:GITHUB_WORKSPACE | Out-Null
+
+        Set-Content (Join-Path $root .gclient) @"
+        solutions = [
+          {
+            "name": "pdfium/bare-pdfium",
+            "url": "https://github.com/$env:GITHUB_REPOSITORY.git",
+            "deps_file": "DEPS",
+            "managed": False,
+            "custom_deps": {},
+            "custom_vars": {
+              "checkout_configuration": "minimal",
+            },
+          },
+        ]
+        target_os = ["win"]
+        "@
+
+        Set-Location $root
+        gclient sync --no-history --shallow --jobs 8
+        New-Item -ItemType Junction -Path buildtools -Target (Join-Path $root pdfium/buildtools) | Out-Null
+
+        Set-Location pdfium
+        git apply (Get-ChildItem bare-pdfium/patches/*.patch).FullName
+
+
+        New-Item -ItemType Directory -Force "out/$env:TARGET" | Out-Null
+        Set-Content "out/$env:TARGET/args.gn" @"
+        import("//bare-pdfium/gn/pdfium.gni")
+        import("//bare-pdfium/gn/mode/release.gni")
+        import("//bare-pdfium/gn/target/$($env:TARGET).gni")
+        "@
+
+        gn gen "out/$env:TARGET"
+        autoninja -C "out/$env:TARGET" pdfium
+
+        $dir = (Join-Path $root pdfium) -replace '\\', '/'
+        Add-Content $env:GITHUB_OUTPUT "flags=-D GN_DIR=$dir -D GN_OUT_DIR=$dir/out/$env:TARGET"

@@ -1,0 +1,1239 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [0 0 400 900]
+  /Contents 4 0 R
+  /Resources <<
+    /Shading <<
+      /Sh1 6 0 R
+      /Sh2 10 0 R
+      /Sh3 11 0 R
+      /Sh4 12 0 R
+      /Sh5 13 0 R
+      /Sh6 14 0 R
+      /Sh6Alt 15 0 R
+      /Sh7 16 0 R
+      /Sh7Alt 17 0 R
+
+      /ShArr1 21 0 R
+      /ShArr2 25 0 R
+      /ShArr3 26 0 R
+      /ShArr4 27 0 R
+      /ShArr5 28 0 R
+      /ShArr6 29 0 R
+      /ShArr6Alt 30 0 R
+      /ShArr7 31 0 R
+      /ShArr7Alt 32 0 R
+
+      /ShLab1 37 0 R
+      /ShLab2 38 0 R
+      /ShLab3 39 0 R
+      /ShLab4 40 0 R
+      /ShLab5 41 0 R
+      /ShLab6 42 0 R
+      /ShLab6Alt 43 0 R
+      /ShLab7 44 0 R
+      /ShLab7Alt 45 0 R
+
+      /ShIndexed4 46 0 R
+      /ShIndexed5 47 0 R
+      /ShIndexed6 48 0 R
+      /ShIndexed6Alt 49 0 R
+      /ShIndexed7 50 0 R
+      /ShIndexed7Alt 51 0 R
+    >>
+  >>
+>>
+endobj
+
+4 0 obj <<
+  /Length 2126
+>>
+stream
+
+% 1-in, 3-out functions
+q
+1 0 0 1 0 800 cm
+0 0 100 100 re W n
+/Sh1 sh
+Q
+
+q
+1 0 0 1 0 700 cm
+0 0 100 100 re W n
+/Sh2 sh
+Q
+
+q
+1 0 0 1 0 600 cm
+0 0 100 100 re W n
+/Sh3 sh
+Q
+
+q
+1 0 0 1 0 500 cm
+0 0 100 100 re W n
+/Sh4 sh
+Q
+
+q
+1 0 0 1 0 400 cm
+0 0 100 100 re W n
+/Sh5 sh
+Q
+
+q
+1 0 0 1 0 300 cm
+0 0 100 100 re W n
+/Sh6 sh
+Q
+
+q
+1 0 0 1 0 200 cm
+0 0 100 100 re W n
+/Sh6Alt sh
+Q
+
+q
+1 0 0 1 0 100 cm
+0 0 100 100 re W n
+/Sh7 sh
+Q
+
+q
+1 0 0 1 0 0 cm
+0 0 100 100 re W n
+/Sh7Alt sh
+Q
+
+% 1-in, array of 1-out functions
+
+q
+1 0 0 1 100 800 cm
+0 0 100 100 re W n
+/ShArr1 sh
+Q
+
+q
+1 0 0 1 100 700 cm
+0 0 100 100 re W n
+/ShArr2 sh
+Q
+
+q
+1 0 0 1 100 600 cm
+0 0 100 100 re W n
+/ShArr3 sh
+Q
+
+q
+1 0 0 1 100 500 cm
+0 0 100 100 re W n
+/ShArr4 sh
+Q
+
+q
+1 0 0 1 100 400 cm
+0 0 100 100 re W n
+/ShArr5 sh
+Q
+
+q
+1 0 0 1 100 300 cm
+0 0 100 100 re W n
+/ShArr6 sh
+Q
+
+q
+1 0 0 1 100 200 cm
+0 0 100 100 re W n
+/ShArr6Alt sh
+Q
+
+q
+1 0 0 1 100 100 cm
+0 0 100 100 re W n
+/ShArr7 sh
+Q
+
+q
+1 0 0 1 100 0 cm
+0 0 100 100 re W n
+/ShArr7Alt sh
+Q
+
+
+% Interpolation in lab
+
+q
+1 0 0 1 200 800 cm
+0 0 100 100 re W n
+/ShLab1 sh
+Q
+
+q
+1 0 0 1 200 700 cm
+0 0 100 100 re W n
+/ShLab2 sh
+Q
+
+q
+1 0 0 1 200 600 cm
+0 0 100 100 re W n
+/ShLab3 sh
+Q
+
+q
+1 0 0 1 200 500 cm
+0 0 100 100 re W n
+/ShLab4 sh
+Q
+
+q
+1 0 0 1 200 400 cm
+0 0 100 100 re W n
+/ShLab5 sh
+Q
+
+q
+1 0 0 1 200 300 cm
+0 0 100 100 re W n
+/ShLab6 sh
+Q
+
+q
+1 0 0 1 200 200 cm
+0 0 100 100 re W n
+/ShLab6Alt sh
+Q
+
+q
+1 0 0 1 200 100 cm
+0 0 100 100 re W n
+/ShLab7 sh
+Q
+
+q
+1 0 0 1 200 0 cm
+0 0 100 100 re W n
+/ShLab7Alt sh
+Q
+
+% Indexed color spaces
+% The last bullet of "Color Space: Special Considerations"
+% prohibits indexed color spaces for "any shading dictionary
+% that contains a Function entry" and that entry is required
+% for types 1-3. So only types 4-7 use indexed color spaces.
+
+q
+1 0 0 1 300 500 cm
+0 0 100 100 re W n
+/ShIndexed4 sh
+Q
+
+q
+1 0 0 1 300 400 cm
+0 0 100 100 re W n
+/ShIndexed5 sh
+Q
+
+q
+1 0 0 1 300 300 cm
+0 0 100 100 re W n
+/ShIndexed6 sh
+Q
+
+q
+1 0 0 1 300 200 cm
+0 0 100 100 re W n
+/ShIndexed6Alt sh
+Q
+
+q
+1 0 0 1 300 100 cm
+0 0 100 100 re W n
+/ShIndexed7 sh
+Q
+
+q
+1 0 0 1 300 0 cm
+0 0 100 100 re W n
+/ShIndexed7Alt sh
+Q
+
+endstream
+endobj
+
+% 2-in, 3-out function and shading
+
+5 0 obj <<
+  /Domain [0 1 0 1]
+  /Range [0 1 0 1 0 1]
+  /FunctionType 4
+  /Length 95
+>>
+stream
+{
+  exch
+  pop
+
+  1 exch
+  sub
+
+  dup
+  dup
+
+  1 exch
+  sub
+
+  exch
+
+  0.5 sub
+  abs
+  2 mul
+
+}
+endstream
+endobj
+
+6 0 obj <<
+  /AntiAlias false
+  /ColorSpace /DeviceRGB
+  /Domain [0 1 0 1]
+  /Matrix [90 -90 90 90 -40 50]
+  /Function 5 0 R
+  /ShadingType 1
+>>
+endobj
+
+
+% 1-in 3-out function.
+
+7 0 obj <<
+  /FunctionType 2
+  /Domain [0 1]
+  /Range [0 1 0 1 0 1]
+  /C0 [1 0 1]
+  /C1 [0.5 0.5 0]
+  /N 1
+>>
+endobj
+
+8 0 obj <<
+  /FunctionType 2
+  /Domain [0 1]
+  /Range [0 1 0 1 0 1]
+  /C0 [0.5 0.5 0]
+  /C1 [0 1 1]
+  /N 1
+>>
+endobj
+
+9 0 obj <<
+  /FunctionType 3
+  /Domain [0 1]
+  /Functions [7 0 R 8 0 R]
+  /Bounds [.5]
+  /Encode [0 1 0 1]
+>>
+endobj
+
+% Shadings with 1-in, 3-out function.
+
+10 0 obj <<
+  /AntiAlias false
+  /ColorSpace /DeviceRGB
+  /Coords [0 0 100 100]
+  /Domain [0 1]
+  /Extend [false false]
+  /Function 9 0 R
+  /ShadingType 2
+>>
+endobj
+
+11 0 obj <<
+  /AntiAlias false
+  /ColorSpace /DeviceRGB
+  /Coords [30 50 10 50 50 40]
+  /Domain [0 1]
+  /Extend [true true]
+  /Function 9 0 R
+  /ShadingType 3
+>>
+endobj
+
+12 0 obj <<
+  /ShadingType 4
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function 9 0 R
+  /Decode [0 100 0 100 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 179
+>>
+stream
+00 0000 0000 00
+00 ffff 0000 ff
+00 0000 3000 00
+
+00 ffff ffff ff
+00 0000 ffff 00
+00 ffff d000 ff
+
+00 ffff 0800 ff
+00 ffff c800 ff
+00 0000 3800 00
+01 1000 9000 10
+02 0000 f800 00
+>
+endstream
+endobj
+
+13 0 obj
+<<
+  /ShadingType 5
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /VerticesPerRow 2
+  /Function 9 0 R
+  /Decode [0 100 0 100 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 55
+>>
+stream
+0000 ffff 00  ffff ffff ff
+0000 0000 00  ffff 0000 ff
+>
+endstream
+endobj
+
+14 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function 9 0 R
+  /Decode [0 100 0 100 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 154
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+00
+00
+ff
+ff
+>
+endstream
+endobj
+
+15 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function 9 0 R
+  /Decode [0 100 0 100 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 154
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+00
+ff
+00
+ff
+>
+endstream
+endobj
+
+16 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function 9 0 R
+  /Decode [0 100 0 100 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 197
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+00
+00
+ff
+ff
+>
+endstream
+endobj
+
+17 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function 9 0 R
+  /Decode [0 100 0 100 0 1]
+  /Filter /ASCIIHexDecode
+  /Length 197
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+00
+ff
+00
+ff
+>
+endstream
+endobj
+
+% 2-in, array of 1-out functions and shading
+
+18 0 obj <<
+  /Domain [0 1 0 1]
+  /Range [0 1]
+  /FunctionType 4
+  /Length 32
+>>
+stream
+{
+  exch
+  pop
+
+  1 exch
+  sub
+}
+endstream
+endobj
+
+19 0 obj <<
+  /Domain [0 1 0 1]
+  /Range [0 1]
+  /FunctionType 4
+  /Length 16
+>>
+stream
+{
+  exch
+  pop
+}
+endstream
+endobj
+
+20 0 obj <<
+  /Domain [0 1 0 1]
+  /Range [0 1]
+  /FunctionType 4
+  /Length 41
+>>
+stream
+{
+  exch
+  pop
+
+  0.5 sub
+  abs
+  2 mul
+}
+endstream
+endobj
+
+21 0 obj <<
+  /AntiAlias false
+  /ColorSpace /DeviceRGB
+  /Domain [0 1 0 1]
+  /Matrix [90 -90 90 90 -40 50]
+  /Function [18 0 R 19 0 R 20 0 R]
+  /ShadingType 1
+>>
+endobj
+
+
+% 1-in 1-out functions.
+
+22 0 obj <<
+  /FunctionType 2
+  /Domain [1 2]
+  /Range [0 1]
+  /C0 [2]
+  /C1 [1]
+  /N 1
+>>
+endobj
+
+23 0 obj <<
+  /FunctionType 2
+  /Domain [1 2]
+  /Range [0 1]
+  /C0 [-1]
+  /C1 [0]
+  /N 1
+>>
+endobj
+
+24 0 obj <<
+  /FunctionType 3
+  /Domain [1 2]
+  /Functions [22 0 R 23 0 R]
+  /Bounds [1.5]
+  /Encode [1 2 1 2]
+>>
+endobj
+
+% Shadings with 1-in, array of 1-out functions.
+% (Identical to the shadings above, except for the /Function entry.)
+
+25 0 obj <<
+  /AntiAlias false
+  /ColorSpace /DeviceRGB
+  /Coords [0 0 100 100]
+  /Domain [1 2]
+  /Extend [false false]
+  /Function [22 0 R 23 0 R 24 0 R]
+  /ShadingType 2
+>>
+endobj
+
+26 0 obj <<
+  /AntiAlias false
+  /ColorSpace /DeviceRGB
+  /Coords [30 50 10 50 50 40]
+  /Domain [1 2]
+  /Extend [true true]
+  /Function [22 0 R 23 0 R 24 0 R]
+  /ShadingType 3
+>>
+endobj
+
+27 0 obj <<
+  /ShadingType 4
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function [22 0 R 23 0 R 24 0 R]
+  /Decode [0 100 0 100 1 2]
+  /Filter /ASCIIHexDecode
+  /Length 179
+>>
+stream
+00 0000 0000 00
+00 ffff 0000 ff
+00 0000 3000 00
+
+00 ffff ffff ff
+00 0000 ffff 00
+00 ffff d000 ff
+
+00 ffff 0800 ff
+00 ffff c800 ff
+00 0000 3800 00
+01 1000 9000 10
+02 0000 f800 00
+>
+endstream
+endobj
+
+28 0 obj
+<<
+  /ShadingType 5
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /VerticesPerRow 2
+  /Function [22 0 R 23 0 R 24 0 R]
+  /Decode [0 100 0 100 1 2]
+  /Filter /ASCIIHexDecode
+  /Length 55
+>>
+stream
+0000 ffff 00  ffff ffff ff
+0000 0000 00  ffff 0000 ff
+>
+endstream
+endobj
+
+29 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function [22 0 R 23 0 R 24 0 R]
+  /Decode [0 100 0 100 1 2]
+  /Filter /ASCIIHexDecode
+  /Length 154
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+00
+00
+ff
+ff
+>
+endstream
+endobj
+
+30 0 obj <<
+  /ShadingType 6
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function [22 0 R 23 0 R 24 0 R]
+  /Decode [0 100 0 100 1 2]
+  /Filter /ASCIIHexDecode
+  /Length 154
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+00
+ff
+00
+ff
+>
+endstream
+endobj
+
+31 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function [22 0 R 23 0 R 24 0 R]
+  /Decode [0 100 0 100 1 2]
+  /Filter /ASCIIHexDecode
+  /Length 197
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+00
+00
+ff
+ff
+>
+endstream
+endobj
+
+32 0 obj <<
+  /ShadingType 7
+  /ColorSpace /DeviceRGB
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Function [22 0 R 23 0 R 24 0 R]
+  /Decode [0 100 0 100 1 2]
+  /Filter /ASCIIHexDecode
+  /Length 197
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+00
+ff
+00
+ff
+>
+endstream
+endobj
+
+% Lab color space.
+
+33 0 obj
+[/Lab <<
+  /WhitePoint [.9505 1 1.089]
+  /Range[-128 127 -128 127]
+>>]
+endobj
+
+34 0 obj
+[ /Indexed 33 0 R 1 <ffffff ff0000>]
+endobj
+
+35 0 obj <<
+  /FunctionType 2
+  /Domain [0 1]
+  /Range [0 100 -128 127 -128 127]
+  /C0 [100 127 127]
+  /C1 [100 -128 -128]
+  /N 1
+>>
+endobj
+
+36 0 obj <<
+  /Domain [0 1 0 1]
+  /Range [0 100 -128 127 -128 127]
+  /FunctionType 4
+  /Length 56
+>>
+stream
+{
+  exch
+  pop
+
+  100 exch
+
+  -255 mul
+  127 add
+  dup
+}
+endstream
+endobj
+
+37 0 obj <<
+  /AntiAlias false
+  /ColorSpace 33 0 R
+  /Domain [0 1 0 1]
+  /Matrix [90 -90 90 90 -40 50]
+  /Function 36 0 R
+  /ShadingType 1
+>>
+endobj
+
+38 0 obj <<
+  /AntiAlias false
+  /ColorSpace 33 0 R
+  /Coords [0 0 100 100]
+  /Domain [0 1]
+  /Extend [false false]
+  /Function 35 0 R
+  /ShadingType 2
+>>
+endobj
+
+39 0 obj <<
+  /AntiAlias false
+  /ColorSpace 33 0 R
+  /Coords [30 50 10 50 50 40]
+  /Domain [0 1]
+  /Extend [true true]
+  /Function 35 0 R
+  /ShadingType 3
+>>
+endobj
+
+40 0 obj <<
+  /ShadingType 4
+  /ColorSpace 33 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 100 -128 127 -128 127]
+  /Filter /ASCIIHexDecode
+  /Length 223
+>>
+stream
+00 0000 0000 ffffff
+00 ffff 0000 ff0000
+00 0000 3000 ffffff
+
+00 ffff ffff ff0000
+00 0000 ffff ffffff
+00 ffff d000 ff0000
+
+00 ffff 0800 ff0000
+00 ffff c800 ff0000
+00 0000 3800 ffffff
+01 1000 9000 ffffff
+02 0000 f800 ffffff
+>
+endstream
+endobj
+
+41 0 obj
+<<
+  /ShadingType 5
+  /ColorSpace 33 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /VerticesPerRow 2
+  /Decode [0 100 0 100 0 100 -128 127 -128 127]
+  /Filter /ASCIIHexDecode
+  /Length 71
+>>
+stream
+0000 ffff ffffff  ffff ffff ff0000
+0000 0000 ffffff  ffff 0000 ff0000
+>
+endstream
+endobj
+
+42 0 obj <<
+  /ShadingType 6
+  /ColorSpace 33 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 100 -128 127 -128 127]
+  /Filter /ASCIIHexDecode
+  /Length 170
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+ffffff
+ffffff
+ff0000
+ff0000
+>
+endstream
+endobj
+
+43 0 obj <<
+  /ShadingType 6
+  /ColorSpace 33 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 100 -128 127 -128 127]
+  /Filter /ASCIIHexDecode
+  /Length 170
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+ffffff
+ff0000
+ffffff
+ff0000
+>
+endstream
+endobj
+
+44 0 obj <<
+  /ShadingType 7
+  /ColorSpace 33 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 100 -128 127 -128 127]
+  /Filter /ASCIIHexDecode
+  /Length 213
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+ffffff
+ffffff
+ff0000
+ff0000
+>
+endstream
+endobj
+
+45 0 obj <<
+  /ShadingType 7
+  /ColorSpace 33 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 100 -128 127 -128 127]
+  /Filter /ASCIIHexDecode
+  /Length 213
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+ffffff
+ff0000
+ffffff
+ff0000
+>
+endstream
+endobj
+
+% Indexed color spaces
+
+46 0 obj <<
+  /ShadingType 4
+  /ColorSpace 34 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 255]
+  /Filter /ASCIIHexDecode
+  /Length 179
+>>
+stream
+00 0000 0000 00
+00 ffff 0000 01
+00 0000 3000 00
+
+00 ffff ffff 01
+00 0000 ffff 00
+00 ffff d000 01
+
+00 ffff 0800 01
+00 ffff c800 01
+00 0000 3800 00
+01 1000 9000 00
+02 0000 f800 00
+>
+endstream
+endobj
+
+47 0 obj
+<<
+  /ShadingType 5
+  /ColorSpace 34 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /VerticesPerRow 2
+  /Decode [0 100 0 100 0 255]
+  /Filter /ASCIIHexDecode
+  /Length 55
+>>
+stream
+0000 ffff 00  ffff ffff 01
+0000 0000 00  ffff 0000 01
+>
+endstream
+endobj
+
+48 0 obj <<
+  /ShadingType 6
+  /ColorSpace 34 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 255]
+  /Filter /ASCIIHexDecode
+  /Length 154
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+00
+00
+01
+01
+>
+endstream
+endobj
+
+49 0 obj <<
+  /ShadingType 6
+  /ColorSpace 34 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 255]
+  /Filter /ASCIIHexDecode
+  /Length 154
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+00
+01
+00
+01
+>
+endstream
+endobj
+
+50 0 obj <<
+  /ShadingType 7
+  /ColorSpace 34 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 255]
+  /Filter /ASCIIHexDecode
+  /Length 197
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+00
+00
+01
+01
+>
+endstream
+endobj
+
+51 0 obj <<
+  /ShadingType 7
+  /ColorSpace 34 0 R
+  /BitsPerCoordinate 16
+  /BitsPerComponent 8
+  /BitsPerFlag 8
+  /Decode [0 100 0 100 0 255]
+  /Filter /ASCIIHexDecode
+  /Length 197
+>>
+stream
+00
+           0ccd 0ccd  0219 8058
+1500 80ff  2800 d72a  a000 f0a7
+90f3 e20c  cdf2 f300  ff09 58d5
+c7ff 90ff  ffa7 2a58  2f00 4332
+f332 0dfe
+0000 f000  f000 f000  f000 0000  0000 0000
+00
+01
+00
+01
+>
+endstream
+endobj
+
+xref
+0 52
+0000000000 65535 f 
+0000000015 00000 n 
+0000000069 00000 n 
+0000000133 00000 n 
+0000000989 00000 n 
+0000003206 00000 n 
+0000003415 00000 n 
+0000003593 00000 n 
+0000003711 00000 n 
+0000003829 00000 n 
+0000003986 00000 n 
+0000004152 00000 n 
+0000004322 00000 n 
+0000004733 00000 n 
+0000005022 00000 n 
+0000005408 00000 n 
+0000005794 00000 n 
+0000006223 00000 n 
+0000006698 00000 n 
+0000006837 00000 n 
+0000006960 00000 n 
+0000007108 00000 n 
+0000007305 00000 n 
+0000007404 00000 n 
+0000007504 00000 n 
+0000007744 00000 n 
+0000007927 00000 n 
+0000008114 00000 n 
+0000008542 00000 n 
+0000008848 00000 n 
+0000009251 00000 n 
+0000009654 00000 n 
+0000010100 00000 n 
+0000010566 00000 n 
+0000010654 00000 n 
+0000010708 00000 n 
+0000010849 00000 n 
+0000011032 00000 n 
+0000011183 00000 n 
+0000011346 00000 n 
+0000011513 00000 n 
+0000011966 00000 n 
+0000012269 00000 n 
+0000012669 00000 n 
+0000013069 00000 n 
+0000013512 00000 n 
+0000013979 00000 n 
+0000014370 00000 n 
+0000014639 00000 n 
+0000015005 00000 n 
+0000015371 00000 n 
+0000015780 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 52
+>>
+startxref
+16189
+%%EOF

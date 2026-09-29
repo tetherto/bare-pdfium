@@ -1,0 +1,100 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 2
+  /Kids [3 0 R 5 0 R]
+  /MediaBox [0 0 200 200]
+  /Resources <<
+    /ColorSpace <<
+      /CS0 /DeviceGray % Needed to make Acrobat happy.
+    >>
+  >>
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents 4 0 R
+>>
+endobj
+4 0 obj <<
+  /Length 167
+>>
+stream
+% This page renders correctly.
+q
+0 0 1 rg
+0 0 200 200 re f
+Q
+q
+100 0 0 100 0 0 cm
+BI
+/W 2
+/H 2
+/BPC 8
+/CS /G
+/F /AHx
+ID
+0066CCFF >
+EI
+Q
+q
+0 1 0 rg
+100 0 100 100 re f
+Q
+endstream
+endobj
+5 0 obj <<
+  /Type /Page
+  /Parent 2 0 R
+  /Contents 6 0 R
+>>
+endobj
+6 0 obj <<
+  /Length 198
+>>
+stream
+% This page only renders as blue due to the missing EI operator.
+q
+0 0 1 rg
+0 0 200 200 re f
+Q
+q
+100 0 0 100 0 0 cm
+BI
+/W 2
+/H 2
+/BPC 8
+/CS /G
+/F /AHx
+ID
+0066CCFF >
+Q
+q
+0 1 0 rg
+100 0 100 100 re f
+Q
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000265 00000 n 
+0000000334 00000 n 
+0000000554 00000 n 
+0000000623 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 7
+>>
+startxref
+874
+%%EOF

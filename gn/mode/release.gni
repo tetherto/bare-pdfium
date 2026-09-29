@@ -1,0 +1,18 @@
+# Standalone PDFium cannot make an official build, which dates itself from
+# Chromium's version file.
+is_official_build = false
+is_debug = false
+strip_debug_info = true
+symbol_level = 0
+enable_dsyms = false
+
+# Disable profile-guided optimization (PGO) and just build everything in a
+# single pass.
+chrome_pgo_phase = 0
+
+# Disable thin link-time optimization (ThinLTO), as the archive is linked by a
+# different toolchain.
+use_thin_lto = false
+
+# Disable control flow integrity (CFI) as it relies on ThinLTO.
+is_cfi = false

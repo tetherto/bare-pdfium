@@ -1,0 +1,5 @@
+target_os = "linux"
+
+# Keep out GLib, which Chromium links HarfBuzz against on Linux and would make
+# a runtime dependency of the addon.
+use_glib = false

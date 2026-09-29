@@ -1,0 +1,148 @@
+%PDF-1.7
+% ò¤ô
+1 0 obj <<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 obj <<
+  /Type /Pages
+  /Count 1
+  /Kids [3 0 R]
+>>
+endobj
+3 0 obj <<
+  /Type /Page
+  /Parent 1 0 R
+  /Contents 4 0 R
+  /MediaBox [0 0 200 400]
+  /Resources <<
+    /ProcSet [/PDF /Text]
+    /Font <<
+      /F1 5 0 R
+    >>
+  >>
+>>
+endobj
+4 0 obj <<
+  /Length 40
+>>
+stream
+BT
+/F1 1 Tf
+1 0 0 1 20 55 Tm
+(ABCD)Tj
+ET
+endstream
+endobj
+5 0 obj <<
+  /Type /Font
+  /Subtype /Type3
+  /FontBBox [0 0 600 600]
+  /FontMatrix [1 0 0 -100 0 0]
+  /CharProcs <<
+    /CA 6 0 R
+    /CB 7 0 R
+    /CC 8 0 R
+    /CD 9 0 R
+  >>
+  /Encoding <<
+    /Type /Encoding
+    /Differences [65 /CA 66 /CB 67 /CC 68 /CD]
+  >>
+  /FirstChar 65
+  /LastChar 68
+  /Widths [18 1000 18 18]
+  /Resources <<
+    /ProcSet [/PDF /ImageB]
+  >>
+>>
+endobj
+6 0 obj <<
+  /Length 62
+>>
+stream
+q
+d0 0 0
+1 0 0 1 6 0 cm
+BI
+/W 1
+/H 1
+/BPC 1
+/IM true
+ID
+x
+EI
+Q
+endstream
+endobj
+7 0 obj <<
+  /Length 104
+>>
+stream
+q
+6 0 0 48 6 0 cm
+BI
+/W 6
+/H 48
+/BPC 1
+/IM true
+ID
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EI
+Q
+endstream
+endobj
+8 0 obj <<
+  /Length 64
+>>
+stream
+q
+6 0 0 1 2147483570 0 cm
+BI
+/W 6
+/H 1
+/BPC 1
+/IM true
+ID
+x
+EI
+Q
+endstream
+endobj
+9 0 obj <<
+  /Length 62
+>>
+stream
+q
+1 0 0 6 0 21474834 cm
+BI
+/W 1
+/H 1
+/BPC 1
+/IM true
+ID
+x
+EI
+Q
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000068 00000 n 
+0000000131 00000 n 
+0000000309 00000 n 
+0000000401 00000 n 
+0000000781 00000 n 
+0000000895 00000 n 
+0000001052 00000 n 
+0000001168 00000 n 
+trailer <<
+  /Root 1 0 R
+  /Size 10
+>>
+startxref
+1282
+%%EOF

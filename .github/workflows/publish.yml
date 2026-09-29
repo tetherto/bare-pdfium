@@ -10,14 +10,12 @@ jobs:
   prebuild:
     strategy:
       fail-fast: false
-      # Every target validated by prebuild.yml. android-ia32 is omitted
-      # (pdfium-binaries ships no android-x86).
       matrix:
         include:
           - os: ubuntu-22.04
             platform: linux
             arch: x64
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-22.04
             platform: linux
             arch: arm64
           - os: ubuntu-24.04
@@ -29,21 +27,24 @@ jobs:
           - os: ubuntu-24.04
             platform: android
             arch: arm
-          - os: macos-14
+          - os: ubuntu-24.04
+            platform: android
+            arch: ia32
+          - os: macos-15
             platform: darwin
             arch: x64
-          - os: macos-14
+          - os: macos-15
             platform: darwin
             arch: arm64
-          - os: macos-14
+          - os: macos-15
             platform: ios
             arch: arm64
-          - os: macos-14
+          - os: macos-15
             platform: ios
             arch: arm64
             tags: -simulator
             flags: --simulator
-          - os: macos-14
+          - os: macos-15
             platform: ios
             arch: x64
             tags: -simulator
@@ -58,11 +59,17 @@ jobs:
     name: Build / ${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.tags }}
     steps:
       - uses: holepunchto/actions/bare-base@v1
+      - uses: ./.github/actions/pdfium
+        id: pdfium
+        with:
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
+          tags: ${{ matrix.tags }}
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
           arch: ${{ matrix.arch }}
-          flags: ${{ matrix.flags }}
+          flags: ${{ matrix.flags }} ${{ steps.pdfium.outputs.flags }}
           tags: ${{ matrix.tags }}
           upload: true
   publish:

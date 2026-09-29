@@ -168,27 +168,87 @@ consumers do not need `@types/node`.
 
 ## Build
 
-Requires the Bare toolchain (`npm i -g bare-make`) and CMake ≥ 3.31.
+PDFium is built by its own GN build and linked into the addon through
+[`cmake-gn`](https://github.com/holepunchto/cmake-gn), the way
+[`libjs`](https://github.com/holepunchto/libjs) links V8. Every prebuild is a
+single `.bare`. Building needs
+[`depot_tools`](https://commondatastorage.googleapis.com/chrome-infra-docs/flat/depot_tools/docs/html/depot_tools_tutorial.html#_setting_up)
+and the Bare toolchain (`npm i -g bare-make`).
+
+`DEPS` pins PDFium, which pins everything it builds with. Fetch it with gclient
+into a directory of its own, with this repository checked out as
+`pdfium/bare-pdfium` inside it:
 
 ```sh
+mkdir -p pdfium/pdfium && cd pdfium
+ln -s <path to bare-pdfium> pdfium/bare-pdfium
+gclient config --name pdfium/bare-pdfium --unmanaged --custom-var checkout_configuration=minimal https://github.com/tetherto/bare-pdfium.git
+gclient sync --no-history --shallow
+ln -s pdfium/buildtools buildtools
+```
+
+For android, ios or win targets, first add `target_os = ["<os>"]` to `.gclient`,
+and for android also `"checkout_android": True` to its `custom_vars`. On Windows,
+use a junction (`mklink /j`) instead of `ln -s` and set
+`DEPOT_TOOLS_WIN_TOOLCHAIN=0`.
+
+Then apply the patches in [`patches/`](patches), which fix PDFium's standalone
+build for targets it does not build itself, and build PDFium for a target from
+[`gn/target/`](gn/target). Revert the patches with `git apply --reverse` before the next
+`gclient sync`, which needs a clean tree:
+
+```sh
+cd pdfium
+git apply bare-pdfium/patches/*.patch
+gn gen out/<target> --args='import("//bare-pdfium/gn/pdfium.gni") import("//bare-pdfium/gn/mode/release.gni") import("//bare-pdfium/gn/target/<target>.gni")'
+autoninja -C out/<target> pdfium buildtools/third_party/libc++:libc++
+```
+
+On Windows, build only `pdfium`, as PDFium uses the MSVC STL there. Chromium's
+`build/` needs the Windows SDK it pins (10.0.28000), which Visual Studio 2022
+does not install by default. Finally,
+point the addon at the build, using absolute paths. Linux builds also take the
+sysroot PDFium was built against, which
+`python3 build/linux/sysroot_scripts/install-sysroot.py --arch=<arch>` installs as
+`build/linux/debian_bullseye_<amd64|arm64>-sysroot`:
+
+```sh
+cd <path to bare-pdfium>
 npm install
-bare-make generate   # downloads a prebuilt PDFium for the host target
+bare-make generate -D GN_DIR=<root>/pdfium -D GN_OUT_DIR=<root>/pdfium/out/<target>
 bare-make build
 bare-make install    # writes prebuilds/<target>/
 npm test
 ```
 
-`bare-make generate` fetches PDFium from
-[bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) for the
-target (override the release with `-DPDFIUM_RELEASE=chromium/<n>`), so the first
-configure needs network access. The released binaries are shared libraries;
-`add_bare_module(... INSTALL TARGET pdfium)` ships the shared library beside the
-built `.bare`, where the module's rpath resolves it.
+`.github/actions/pdfium` runs these steps in CI. `test/render.js` compares renders
+against the expected PNGs from PDFium's own pixel tests, byte for byte.
+
+### Updating PDFium
+
+1. Pin the PDFium that Chrome's current Stable release ships as
+   `pdfium_revision` in `DEPS`, keeping its comment in step. Chrome publishes it
+   for each release:
+
+   ```sh
+   curl -s 'https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Linux&num=1'
+   ```
+
+   `hashes.pdfium` is the PDFium commit and `version` the Chrome release. Stable
+   moves every four weeks and picks up security fixes between releases.
+
+2. `gclient sync`, rebuild, and regenerate the reference renders:
+
+   ```sh
+   bare scripts/pdfium-fixtures.js <root>/pdfium
+   ```
+
+   Review any page the fixture script reports as dropped before accepting it.
 
 ## Prebuilds
 
 `.github/workflows/prebuild.yml` builds prebuilds for every target
-(linux x64/arm64, android arm64/arm/x64, darwin x64/arm64, ios arm64 +
+(linux x64/arm64, android arm64/arm/x64/ia32, darwin x64/arm64, ios arm64 +
 simulators, win32 x64/arm64) via the holepunch `compile-prebuilds` actions, then
 merges them. Run it from the Actions tab (`workflow_dispatch`).
 `.github/workflows/publish.yml` runs when a `v*` tag is pushed: it builds the same
@@ -196,15 +256,13 @@ set and publishes it to npm through trusted publishing (no npm token), then
 creates a GitHub release. Tag the commit whose `package.json` has that version. A
 tag newer than npm's current `latest` publishes as `latest`; an older one
 publishes as `release-<major>.<minor>`.
-`android-ia32` is omitted because pdfium-binaries publishes no `android-x86`
-build.
 
 ## Licensing
 
 This wrapper is Apache-2.0. The bundled PDFium (shipped in `prebuilds/`) is
-BSD-3-Clause (© The PDFium Authors); the binaries come from bblanchon/pdfium-
-binaries (MIT) and embed further permissive components. See `NOTICE.md` — a shipping
-application must carry these attributions.
+BSD-3-Clause and Apache-2.0 (© The PDFium Authors) and statically links further
+permissive components, along with LLVM's libc++ outside Windows. See `NOTICE.md`
+— a shipping application must carry these attributions.
 
 ## Why not pdf.js?
 
