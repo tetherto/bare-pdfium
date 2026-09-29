@@ -23,11 +23,19 @@ for (const f of before) {
 const after = new Set()
 let skipped = 0
 
+// PDFium expects these pages to render differently per platform, so one PNG cannot pin them everywhere.
+const perPlatform = new Set()
+for (const expected of fs.readdirSync(pixel)) {
+  const match = expected.match(/^(.+)_expected_(?:agg_)?(?:mac|win|linux)\.pdf\.(\d+)\.png$/)
+  if (match) perPlatform.add(`${match[1]}.${match[2]}`)
+}
+
 for (const expected of fs.readdirSync(pixel).sort()) {
   const match = expected.match(/^(.+)_expected\.pdf\.(\d+)\.png$/)
   if (!match) continue
 
   const [, name, page] = match
+  if (perPlatform.has(`${name}.${page}`)) continue
   const pdf = load(name)
   if (pdf === null) continue
 

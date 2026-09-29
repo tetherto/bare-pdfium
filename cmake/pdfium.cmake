@@ -1,34 +1,5 @@
 include_guard(GLOBAL)
 
-include(FetchContent)
-
-function(fetch_archive name url hash)
-  cmake_parse_arguments(PARSE_ARGV 3 ARGV "CMAKE" "SOURCE_DIR" "")
-
-  if(ARGV_CMAKE)
-    set(subdir)
-  else()
-    set(subdir SOURCE_SUBDIR none)
-  endif()
-
-  FetchContent_Declare(
-    ${name}
-    URL "${url}"
-    URL_HASH SHA256=${hash}
-    TLS_VERIFY ON
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    EXCLUDE_FROM_ALL
-    ${subdir}
-  )
-
-  FetchContent_MakeAvailable(${name})
-
-  if(ARGV_SOURCE_DIR)
-    FetchContent_GetProperties(${name} SOURCE_DIR dir)
-    set(${ARGV_SOURCE_DIR} "${dir}" PARENT_SCOPE)
-  endif()
-endfunction()
-
 fetch_package(
   "git:pdfium.googlesource.com/pdfium#fc46361ce75055cd549cb938fae5d6a3fe3a1a05"
   SOURCE_DIR pdfium_dir
@@ -39,35 +10,22 @@ fetch_package("github:madler/zlib#da607da739fa6047df13e66a2af6b8bec7c2a498")
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(ABSL_MSVC_STATIC_RUNTIME ON)
 
-fetch_archive(
-  abseil
-  "https://github.com/abseil/abseil-cpp/archive/1c84143fb79e6041f3e0596df51c3ae7d7e46a8a.tar.gz"
-  9b9d244901803c11ec967825ff108d0fe46292b42945d12562509796afba2d5b
-  CMAKE
-  SOURCE_DIR abseil_dir
+# Chromium patches abseil into hardened mode, which bounds-checks its containers.
+fetch_package(
+  "github:abseil/abseil-cpp#1c84143fb79e6041f3e0596df51c3ae7d7e46a8a"
+  PATCHES
+    patches/01-abseil-hardened.patch
 )
 
-# Chromium patches abseil into hardened mode, which bounds-checks its containers.
-file(READ "${abseil_dir}/absl/base/options.h" options)
-string(REPLACE "#define ABSL_OPTION_HARDENED 0" "#define ABSL_OPTION_HARDENED 1" hardened "${options}")
-if(NOT hardened STREQUAL options)
-  file(WRITE "${abseil_dir}/absl/base/options.h" "${hardened}")
-endif()
-if(NOT hardened MATCHES "\n#define ABSL_OPTION_HARDENED 1\n")
-  message(FATAL_ERROR "abseil hardened mode could not be enabled")
-endif()
-
-fetch_archive(
-  fast_float
-  "https://github.com/fastfloat/fast_float/archive/34164f547b7df3f5d794ff67e9f885c36819ebfc.tar.gz"
-  b319e4b8c0a6f49453783745656e6c3890c7c3bf79e2ec52b3366d52352d80a8
+fetch_package(
+  "github:fastfloat/fast_float#34164f547b7df3f5d794ff67e9f885c36819ebfc"
+  SOURCE_SUBDIR none
   SOURCE_DIR fast_float_dir
 )
 
-fetch_archive(
-  dragonbox
-  "https://github.com/jk-jeon/dragonbox/archive/beeeef91cf6fef89a4d4ba5e95d47ca64ccb3a44.tar.gz"
-  2646de322a13cdabeeff52863665a492adbd68242c66b5279a5cfefbaa301e39
+fetch_package(
+  "github:jk-jeon/dragonbox#beeeef91cf6fef89a4d4ba5e95d47ca64ccb3a44"
+  SOURCE_SUBDIR none
   SOURCE_DIR dragonbox_dir
 )
 

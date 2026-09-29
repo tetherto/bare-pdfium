@@ -168,7 +168,8 @@ consumers do not need `@types/node`.
 
 ## Build
 
-Requires the Bare toolchain (`npm i -g bare-make`) and CMake ≥ 3.31.
+Requires the Bare toolchain (`npm i -g bare-make`) and CMake ≥ 3.31. x86 targets
+also need [NASM](https://www.nasm.us) for libjpeg-turbo's SIMD code.
 
 ```sh
 npm install
@@ -182,8 +183,11 @@ PDFium is compiled from source with CMake and linked statically, so every
 prebuild is a single `.bare`. `cmake/pdfium.cmake` pins PDFium to a commit on its
 `chromium/<n>` branch and each dependency to the revision that branch's `DEPS`
 uses; `cmake/pdfium/sources.cmake` mirrors the sources of PDFium's GN targets
-with XFA, V8 and Skia off. Archives are verified against pinned SHA-256 hashes.
-The first configure needs network access.
+with XFA, V8 and Skia off, and the HarfBuzz and ICU builds carry the defines of
+their GN targets.
+The first configure needs network access. Android builds share the app's C++
+runtime, so pass `-D ANDROID_STL=c++_shared` to `bare-make generate` as the
+workflows do.
 
 `test/render.js` compares renders against the expected PNGs from PDFium's own
 pixel tests, byte for byte.
@@ -191,14 +195,16 @@ pixel tests, byte for byte.
 ### Updating PDFium
 
 1. Pick the `chromium/<n>` branch, pin its head commit in `cmake/pdfium.cmake`,
-   and update every dependency pin and hash to the revisions in that commit's
-   `DEPS` (Chromium's abseil and ICU forks name their upstream in
-   `README.chromium`).
-2. `bare-make generate`, then check the source lists against PDFium's GN files
-   and regenerate the reference renders:
+   and update every dependency pin to the revisions in that commit's `DEPS`
+   (Chromium's abseil and ICU forks name their upstream in `README.chromium`).
+   The Chromium `build/` headers are pinned by tag and hash.
+2. `bare-make generate`, then check the source lists and the HarfBuzz and ICU
+   defines against their GN files, and regenerate the reference renders. The ICU
+   check needs Chromium's ICU fork at the revision PDFium's `DEPS` pins, which
+   the script prints when run without it:
 
    ```sh
-   bare scripts/pdfium-sources.js build/_deps/git+pdfium.googlesource.com+pdfium-src
+   bare scripts/pdfium-sources.js build/_deps/git+pdfium.googlesource.com+pdfium-src <chromium icu checkout>
    bare scripts/pdfium-fixtures.js build/_deps/git+pdfium.googlesource.com+pdfium-src
    ```
 

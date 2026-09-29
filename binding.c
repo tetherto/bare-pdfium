@@ -193,8 +193,14 @@ bare_pdfium__raster(FPDF_BITMAP bitmap, bare_pdfium_raster_t *raster) {
   return true;
 }
 
+static void
+bare_pdfium__finalize_rgba(js_env_t *env, void *data, void *finalize_hint) {
+  free(data);
+}
+
+// Hands the raster's pixels to the returned arraybuffer, which frees them once collected.
 static js_value_t *
-bare_pdfium__raster_result(js_env_t *env, const bare_pdfium_raster_t *raster) {
+bare_pdfium__raster_result(js_env_t *env, bare_pdfium_raster_t *raster) {
   int err;
 
   js_value_t *result;
@@ -207,10 +213,9 @@ bare_pdfium__raster_result(js_env_t *env, const bare_pdfium_raster_t *raster) {
   size_t len = (size_t) raster->width * (size_t) raster->height * 4;
 
   js_value_t *buffer;
-  uint8_t *data;
-  err = js_create_unsafe_arraybuffer(env, len, (void **) &data, &buffer);
+  err = js_create_external_arraybuffer(env, raster->rgba, len, bare_pdfium__finalize_rgba, NULL, &buffer);
   assert(err == 0);
-  memcpy(data, raster->rgba, len);
+  raster->rgba = NULL;
 
   err = js_set_named_property(env, result, "data", buffer);
   assert(err == 0);
@@ -644,10 +649,7 @@ bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
-  js_value_t *result = bare_pdfium__raster_result(env, &raster);
-  free(raster.rgba);
-
-  return result;
+  return bare_pdfium__raster_result(env, &raster);
 }
 
 static js_value_t *
@@ -677,10 +679,10 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   }
 
   int objects = FPDFPage_CountObjects(page);
-  bare_pdfium_raster_t *images = malloc(sizeof(bare_pdfium_raster_t) * (size_t) objects);
-  if (images == NULL) objects = 0;
+  bare_pdfium_raster_t *images = objects > 0 ? malloc(sizeof(bare_pdfium_raster_t) * (size_t) objects) : NULL;
+  const char *error = objects > 0 && images == NULL ? "failed to allocate bitmap" : NULL;
   uint32_t count = 0;
-  for (int i = 0; i < objects; i++) {
+  for (int i = 0; error == NULL && i < objects; i++) {
     FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, i);
     if (FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_IMAGE) continue;
 
@@ -694,6 +696,7 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
     }
 
     if (bare_pdfium__raster(bitmap, &images[count])) count++;
+    else error = "failed to allocate bitmap";
     FPDFBitmap_Destroy(bitmap);
   }
 
@@ -701,13 +704,20 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
 
   bare_pdfium__unlock();
 
+  if (error) {
+    for (uint32_t i = 0; i < count; i++) free(images[i].rgba);
+    free(images);
+    err = js_throw_error(env, NULL, error);
+    assert(err == 0);
+    return NULL;
+  }
+
   js_value_t *result;
   err = js_create_array(env, &result);
   assert(err == 0);
 
   for (uint32_t i = 0; i < count; i++) {
     js_value_t *item = bare_pdfium__raster_result(env, &images[i]);
-    free(images[i].rgba);
 
     err = js_set_element(env, result, i, item);
     assert(err == 0);

@@ -4,8 +4,6 @@ find_package(cmake-bare REQUIRED PATHS node_modules/cmake-bare)
 find_package(cmake-fetch REQUIRED PATHS node_modules/cmake-fetch)
 find_package(cmake-ports REQUIRED PATHS node_modules/cmake-ports)
 
-set(ANDROID_STL c++_shared)
-
 project(bare_pdfium C CXX)
 
 set(CMAKE_CXX_STANDARD 20)

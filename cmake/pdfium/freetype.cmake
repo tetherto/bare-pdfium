@@ -1,9 +1,8 @@
 include_guard(GLOBAL)
 
-fetch_archive(
-  freetype
-  "https://github.com/freetype/freetype/archive/4800589f76dc62fbe523a74a59e0d4850a5dd7df.tar.gz"
-  70b6aeea4b745ca80fba8dabba240161a8a97c1510241cb53ba65d8f1eda1037
+fetch_package(
+  "github:freetype/freetype#4800589f76dc62fbe523a74a59e0d4850a5dd7df"
+  SOURCE_SUBDIR none
   SOURCE_DIR freetype_dir
 )
 

@@ -8,12 +8,20 @@ endif()
 
 list(JOIN pdfium_flags " " flags)
 
+# x86 SIMD needs NASM, and without this the port silently falls back to plain C.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86|x86)$")
+  set(simd ON)
+else()
+  set(simd OFF)
+endif()
+
 declare_port(
   "github:libjpeg-turbo/libjpeg-turbo#c85e6b905bf237038faa936dab160ebfc5da0344"
   jpeg
   BYPRODUCTS ${lib}
   ARGS
-    "-DCMAKE_C_FLAGS=${flags}"
+    "-DCMAKE_C_FLAGS_INIT=${flags}"
+    -DREQUIRE_SIMD=${simd}
     -DENABLE_SHARED=OFF
     -DWITH_TURBOJPEG=OFF
     -DWITH_ARITH_DEC=OFF
