@@ -40,6 +40,12 @@ typedef struct {
 } bare_pdfium_doc_t;
 
 typedef struct {
+  int width;
+  int height;
+  uint8_t *rgba;
+} bare_pdfium_raster_t;
+
+typedef struct {
   uv_work_t req;
   js_env_t *env;
   js_deferred_t *deferred;
@@ -51,9 +57,7 @@ typedef struct {
   const char *error;
   unsigned short *text;
   size_t units;
-  int width;
-  int height;
-  uint8_t *rgba;
+  bare_pdfium_raster_t raster;
 } bare_pdfium_job_t;
 
 static void
@@ -62,6 +66,7 @@ bare_pdfium__init_lock(void) {
   assert(err == 0);
 }
 
+// Never call into JS while holding the lock: any allocation can run a GC whose finalizers take it.
 static void
 bare_pdfium__lock(void) {
   uv_once(&bare_pdfium_lock_once, bare_pdfium__init_lock);
@@ -144,13 +149,14 @@ bare_pdfium__set_bool(js_env_t *env, js_value_t *object, const char *name, bool 
   assert(err == 0);
 }
 
-// Copy any PDFium bitmap (BGRA/BGRx/BGR/Gray) into a { width, height, data }
-// object whose data is a fresh RGBA arraybuffer. Shared by render and
-// extractImages so both speak the same RGBA the image pipeline expects.
-static void
-bare_pdfium__bitmap_rgba(FPDF_BITMAP bitmap, uint8_t *data) {
+// Copy any PDFium bitmap (BGRA/BGRx/BGR/Gray) into the RGBA the image pipeline expects.
+static bool
+bare_pdfium__raster(FPDF_BITMAP bitmap, bare_pdfium_raster_t *raster) {
   int width = FPDFBitmap_GetWidth(bitmap);
   int height = FPDFBitmap_GetHeight(bitmap);
+  uint8_t *data = malloc((size_t) width * (size_t) height * 4);
+  if (data == NULL) return false;
+
   int stride = FPDFBitmap_GetStride(bitmap);
   int format = FPDFBitmap_GetFormat(bitmap);
   const uint8_t *pixels = (const uint8_t *) FPDFBitmap_GetBuffer(bitmap);
@@ -180,54 +186,31 @@ bare_pdfium__bitmap_rgba(FPDF_BITMAP bitmap, uint8_t *data) {
       dst[x * 4 + 0] = r, dst[x * 4 + 1] = g, dst[x * 4 + 2] = b, dst[x * 4 + 3] = a;
     }
   }
+
+  raster->width = width;
+  raster->height = height;
+  raster->rgba = data;
+  return true;
 }
 
 static js_value_t *
-bare_pdfium__rgba_result(js_env_t *env, int width, int height, const uint8_t *rgba) {
+bare_pdfium__raster_result(js_env_t *env, const bare_pdfium_raster_t *raster) {
   int err;
 
   js_value_t *result;
   err = js_create_object(env, &result);
   assert(err == 0);
 
-  bare_pdfium__set_int(env, result, "width", width);
-  bare_pdfium__set_int(env, result, "height", height);
+  bare_pdfium__set_int(env, result, "width", raster->width);
+  bare_pdfium__set_int(env, result, "height", raster->height);
+
+  size_t len = (size_t) raster->width * (size_t) raster->height * 4;
 
   js_value_t *buffer;
   uint8_t *data;
-  err = js_create_unsafe_arraybuffer(env, (size_t) width * (size_t) height * 4, (void **) &data, &buffer);
+  err = js_create_unsafe_arraybuffer(env, len, (void **) &data, &buffer);
   assert(err == 0);
-  memcpy(data, rgba, (size_t) width * (size_t) height * 4);
-
-  err = js_set_named_property(env, result, "data", buffer);
-  assert(err == 0);
-
-  return result;
-}
-
-// Copy any PDFium bitmap (BGRA/BGRx/BGR/Gray) into a { width, height, data }
-// object whose data is a fresh RGBA arraybuffer. Shared by render and
-// extractImages so both speak the same RGBA the image pipeline expects.
-static js_value_t *
-bare_pdfium__bitmap_result(js_env_t *env, FPDF_BITMAP bitmap) {
-  int err;
-
-  int width = FPDFBitmap_GetWidth(bitmap);
-  int height = FPDFBitmap_GetHeight(bitmap);
-
-  js_value_t *result;
-  err = js_create_object(env, &result);
-  assert(err == 0);
-
-  bare_pdfium__set_int(env, result, "width", width);
-  bare_pdfium__set_int(env, result, "height", height);
-
-  js_value_t *buffer;
-  uint8_t *data;
-  err = js_create_unsafe_arraybuffer(env, (size_t) width * (size_t) height * 4, (void **) &data, &buffer);
-  assert(err == 0);
-
-  bare_pdfium__bitmap_rgba(bitmap, data);
+  memcpy(data, raster->rgba, len);
 
   err = js_set_named_property(env, result, "data", buffer);
   assert(err == 0);
@@ -264,7 +247,7 @@ bare_pdfium__throw_load_error(js_env_t *env, unsigned long code) {
 }
 
 static const char *
-bare_pdfium__render_bitmap(FPDF_DOCUMENT doc, int page_index, double scale, FPDF_BITMAP *result) {
+bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_pdfium_raster_t *result) {
   FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
   if (page == NULL) return "failed to load page";
 
@@ -292,8 +275,9 @@ bare_pdfium__render_bitmap(FPDF_DOCUMENT doc, int page_index, double scale, FPDF
 
   FPDF_ClosePage(page);
 
-  *result = bitmap;
-  return NULL;
+  bool copied = bare_pdfium__raster(bitmap, result);
+  FPDFBitmap_Destroy(bitmap);
+  return copied ? NULL : "failed to allocate bitmap";
 }
 
 static const char *
@@ -649,22 +633,19 @@ bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_double(env, argv[2], &scale);
   assert(err == 0);
 
+  bare_pdfium_raster_t raster;
   bare_pdfium__lock();
+  const char *error = bare_pdfium__render_page(handle->doc, (int) page_index, scale, &raster);
+  bare_pdfium__unlock();
 
-  FPDF_BITMAP bitmap;
-  const char *error = bare_pdfium__render_bitmap(handle->doc, (int) page_index, scale, &bitmap);
   if (error) {
-    bare_pdfium__unlock();
     err = js_throw_error(env, NULL, error);
     assert(err == 0);
     return NULL;
   }
 
-  js_value_t *result = bare_pdfium__bitmap_result(env, bitmap);
-
-  FPDFBitmap_Destroy(bitmap);
-
-  bare_pdfium__unlock();
+  js_value_t *result = bare_pdfium__raster_result(env, &raster);
+  free(raster.rgba);
 
   return result;
 }
@@ -695,12 +676,10 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
-  js_value_t *result;
-  err = js_create_array(env, &result);
-  assert(err == 0);
-
-  uint32_t count = 0;
   int objects = FPDFPage_CountObjects(page);
+  bare_pdfium_raster_t *images = malloc(sizeof(bare_pdfium_raster_t) * (size_t) objects);
+  if (images == NULL) objects = 0;
+  uint32_t count = 0;
   for (int i = 0; i < objects; i++) {
     FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, i);
     if (FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_IMAGE) continue;
@@ -714,16 +693,27 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
       continue;
     }
 
-    js_value_t *item = bare_pdfium__bitmap_result(env, bitmap);
+    if (bare_pdfium__raster(bitmap, &images[count])) count++;
     FPDFBitmap_Destroy(bitmap);
-
-    err = js_set_element(env, result, count++, item);
-    assert(err == 0);
   }
 
   FPDF_ClosePage(page);
 
   bare_pdfium__unlock();
+
+  js_value_t *result;
+  err = js_create_array(env, &result);
+  assert(err == 0);
+
+  for (uint32_t i = 0; i < count; i++) {
+    js_value_t *item = bare_pdfium__raster_result(env, &images[i]);
+    free(images[i].rgba);
+
+    err = js_set_element(env, result, i, item);
+    assert(err == 0);
+  }
+
+  free(images);
 
   return result;
 }
@@ -810,7 +800,7 @@ bare_pdfium__settle_job(bare_pdfium_job_t *job, js_value_t *resolution) {
   assert(err == 0);
 
   free(job->text);
-  free(job->rgba);
+  free(job->raster.rgba);
   free(job);
 }
 
@@ -875,19 +865,9 @@ static void
 bare_pdfium__render_work(uv_work_t *req) {
   bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
   bare_pdfium__lock();
-  if (job->handle->doc == NULL) {
-    job->error = "document is closed";
-  } else {
-    FPDF_BITMAP bitmap;
-    job->error = bare_pdfium__render_bitmap(job->handle->doc, job->page_index, job->scale, &bitmap);
-    if (job->error == NULL) {
-      job->width = FPDFBitmap_GetWidth(bitmap);
-      job->height = FPDFBitmap_GetHeight(bitmap);
-      job->rgba = malloc((size_t) job->width * (size_t) job->height * 4);
-      bare_pdfium__bitmap_rgba(bitmap, job->rgba);
-      FPDFBitmap_Destroy(bitmap);
-    }
-  }
+  job->error = job->handle->doc
+    ? bare_pdfium__render_page(job->handle->doc, job->page_index, job->scale, &job->raster)
+    : "document is closed";
   bare_pdfium__unlock();
 }
 
@@ -901,7 +881,7 @@ bare_pdfium__render_done(uv_work_t *req, int status) {
   err = js_open_handle_scope(env, &scope);
   assert(err == 0);
 
-  js_value_t *result = job->error ? NULL : bare_pdfium__rgba_result(env, job->width, job->height, job->rgba);
+  js_value_t *result = job->error ? NULL : bare_pdfium__raster_result(env, &job->raster);
   bare_pdfium__settle_job(job, result);
 
   err = js_close_handle_scope(env, scope);

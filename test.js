@@ -199,6 +199,12 @@ test('close is idempotent', (t) => {
   t.pass('a second close does not throw')
 })
 
+test('render does not deadlock when a GC finalizes unclosed documents', (t) => {
+  for (let i = 0; i < 200; i++) addon.open(textPdf())
+  for (let i = 0; i < 100; i++) addon.render(textPdf(), 0, { scale: 10 })
+  t.pass()
+})
+
 test('render rejects an out-of-range page', (t) => {
   t.exception(() => addon.render(textPdf(), 5, { scale: 1 }))
 })
