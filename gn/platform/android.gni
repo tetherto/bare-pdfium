@@ -1,3 +1,6 @@
 target_os = "android"
 
 android_ndk_api_level = 29
+
+# Disable allowlist generation as it relies on debug info being available.
+enable_resource_allowlist_generation = false

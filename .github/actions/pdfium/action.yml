@@ -63,6 +63,8 @@ runs:
         ln -s pdfium/buildtools buildtools
 
         cd pdfium
+        git apply bare-pdfium/patches/*.patch
+
         flags="-D GN_DIR=$root/pdfium -D GN_OUT_DIR=$root/pdfium/out/$TARGET"
 
         # Build the addon against the same Debian sysroot as PDFium, which also
@@ -126,9 +128,11 @@ runs:
 
         Set-Location $root
         gclient sync --no-history --shallow --jobs 8
-        New-Item -ItemType Junction -Path buildtools -Target pdfium/buildtools | Out-Null
+        New-Item -ItemType Junction -Path buildtools -Target (Join-Path $root pdfium/buildtools) | Out-Null
 
         Set-Location pdfium
+        git apply (Get-ChildItem bare-pdfium/patches/*.patch)
+
         New-Item -ItemType Directory -Force "out/$env:TARGET" | Out-Null
         Set-Content "out/$env:TARGET/args.gn" @"
         import("//bare-pdfium/gn/pdfium.gni")

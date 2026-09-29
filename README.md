@@ -192,10 +192,14 @@ and for android also `"checkout_android": True` to its `custom_vars`. On Windows
 use a junction (`mklink /j`) instead of `ln -s` and set
 `DEPOT_TOOLS_WIN_TOOLCHAIN=0`.
 
-Then build PDFium for a target from [`gn/target/`](gn/target):
+Then apply the patches in [`patches/`](patches), which fix PDFium's standalone
+build for targets it does not build itself, and build PDFium for a target from
+[`gn/target/`](gn/target). Revert the patches with `git apply --reverse` before
+the next `gclient sync`, which needs a clean tree:
 
 ```sh
 cd pdfium
+git apply bare-pdfium/patches/*.patch
 gn gen out/<target> --args='import("//bare-pdfium/gn/pdfium.gni") import("//bare-pdfium/gn/mode/release.gni") import("//bare-pdfium/gn/target/<target>.gni")'
 autoninja -C out/<target> pdfium buildtools/third_party/libc++:libc++
 ```

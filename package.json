@@ -21,6 +21,7 @@
     "CMakeLists.txt",
     "DEPS",
     "gn",
+    "patches",
     "prebuilds",
     "NOTICE.md"
   ],
