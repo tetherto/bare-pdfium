@@ -226,8 +226,17 @@ against the expected PNGs from PDFium's own pixel tests, byte for byte.
 
 ### Updating PDFium
 
-1. Pick the `chromium/<n>` branch and pin its head commit as `pdfium_revision` in
-   `DEPS`.
+1. Pin the PDFium that Chrome's current Stable release ships as
+   `pdfium_revision` in `DEPS`, keeping its comment in step. Chrome publishes it
+   for each release:
+
+   ```sh
+   curl -s 'https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Linux&num=1'
+   ```
+
+   `hashes.pdfium` is the PDFium commit and `version` the Chrome release. Stable
+   moves every four weeks and picks up security fixes between releases.
+
 2. `gclient sync`, rebuild, and regenerate the reference renders:
 
    ```sh
