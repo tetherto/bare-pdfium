@@ -201,7 +201,7 @@ build for targets it does not build itself, and build PDFium for a target from
 ```sh
 cd pdfium
 git apply bare-pdfium/patches/*.patch
-git -C build apply ../bare-pdfium/patches/build/*.patch
+git -C build apply "$PWD"/bare-pdfium/patches/build/*.patch
 gn gen out/<target> --args='import("//bare-pdfium/gn/pdfium.gni") import("//bare-pdfium/gn/mode/release.gni") import("//bare-pdfium/gn/target/<target>.gni")'
 autoninja -C out/<target> pdfium buildtools/third_party/libc++:libc++
 ```

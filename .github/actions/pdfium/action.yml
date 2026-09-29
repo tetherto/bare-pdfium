@@ -64,7 +64,7 @@ runs:
 
         cd pdfium
         git apply bare-pdfium/patches/*.patch
-        git -C build apply ../bare-pdfium/patches/build/*.patch
+        git -C build apply "$PWD"/bare-pdfium/patches/build/*.patch
 
         flags="-D GN_DIR=$root/pdfium -D GN_OUT_DIR=$root/pdfium/out/$TARGET"
 
@@ -132,8 +132,8 @@ runs:
         New-Item -ItemType Junction -Path buildtools -Target (Join-Path $root pdfium/buildtools) | Out-Null
 
         Set-Location pdfium
-        git apply (Get-ChildItem bare-pdfium/patches/*.patch)
-        git -C build apply (Get-ChildItem bare-pdfium/patches/build/*.patch)
+        git apply (Get-ChildItem bare-pdfium/patches/*.patch).FullName
+        git -C build apply (Get-ChildItem bare-pdfium/patches/build/*.patch).FullName
 
         # Build with the newest desktop SDK the runner has, which may predate Chromium's.
         $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/Include'
