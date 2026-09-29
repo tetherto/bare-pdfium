@@ -64,7 +64,6 @@ runs:
 
         cd pdfium
         git apply bare-pdfium/patches/*.patch
-        git -C build apply "$PWD"/bare-pdfium/patches/build/*.patch
 
         flags="-D GN_DIR=$root/pdfium -D GN_OUT_DIR=$root/pdfium/out/$TARGET"
 
@@ -101,6 +100,17 @@ runs:
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandUseErrorActionPreference = $true
 
+        # Chromium's build pins a Windows SDK newer than the one runners ship.
+        $sdk = Join-Path $env:RUNNER_TEMP winsdksetup.exe
+        Invoke-WebRequest https://download.microsoft.com/download/06fc99ac-527e-451e-a536-8866695a2e7e/KIT_BUNDLE_WINDOWSSDK_MEDIACREATION/winsdksetup.exe -OutFile $sdk
+        if ((Get-FileHash $sdk -Algorithm SHA256).Hash -ne '02988EA51EAB2A2DB53E19735E51C97A6D221ADA74B9174FA0868870B9403BA0') {
+          throw 'Windows SDK installer does not match its checksum'
+        }
+        $install = Start-Process $sdk -ArgumentList '/q', '/norestart' -Wait -PassThru
+        if ($install.ExitCode -ne 0 -or -not (Test-Path "${env:ProgramFiles(x86)}/Windows Kits/10/Include/10.0.28000.0/um")) {
+          throw "Windows SDK 10.0.28000 did not install (exit code $($install.ExitCode))"
+        }
+
         $tools = Join-Path $env:RUNNER_TEMP depot_tools
         git clone --quiet https://chromium.googlesource.com/chromium/tools/depot_tools.git $tools
         $env:PATH = "$tools;$env:PATH"
@@ -133,12 +143,7 @@ runs:
 
         Set-Location pdfium
         git apply (Get-ChildItem bare-pdfium/patches/*.patch).FullName
-        git -C build apply (Get-ChildItem bare-pdfium/patches/build/*.patch).FullName
 
-        # Build with the newest desktop SDK the runner has, which may predate Chromium's.
-        $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/Include'
-        $env:WINDOWS_SDK_VERSION = (Get-ChildItem $kits -Directory | Where-Object { Test-Path (Join-Path $_.FullName um) } | Sort-Object { [version]$_.Name } | Select-Object -Last 1).Name
-        Add-Content $env:GITHUB_ENV "WINDOWS_SDK_VERSION=$env:WINDOWS_SDK_VERSION"
 
         New-Item -ItemType Directory -Force "out/$env:TARGET" | Out-Null
         Set-Content "out/$env:TARGET/args.gn" @"
