@@ -3,6 +3,9 @@
 pdf_is_complete_lib = true
 is_component_build = false
 
+# Only enable debug checks in non-release builds.
+dcheck_always_on = false
+
 pdf_enable_v8 = false
 pdf_enable_xfa = false
 pdf_use_skia = false

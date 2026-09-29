@@ -194,17 +194,21 @@ use a junction (`mklink /j`) instead of `ln -s` and set
 
 Then apply the patches in [`patches/`](patches), which fix PDFium's standalone
 build for targets it does not build itself, and build PDFium for a target from
-[`gn/target/`](gn/target). Revert the patches with `git apply --reverse` before
-the next `gclient sync`, which needs a clean tree:
+[`gn/target/`](gn/target). Patches under `patches/build/` apply to Chromium's
+`build/` checkout. Revert the patches with `git apply --reverse` before the next
+`gclient sync`, which needs a clean tree:
 
 ```sh
 cd pdfium
 git apply bare-pdfium/patches/*.patch
+git -C build apply ../bare-pdfium/patches/build/*.patch
 gn gen out/<target> --args='import("//bare-pdfium/gn/pdfium.gni") import("//bare-pdfium/gn/mode/release.gni") import("//bare-pdfium/gn/target/<target>.gni")'
 autoninja -C out/<target> pdfium buildtools/third_party/libc++:libc++
 ```
 
-On Windows, build only `pdfium`, as PDFium uses the MSVC STL there. Finally,
+On Windows, build only `pdfium`, as PDFium uses the MSVC STL there, and set
+`WINDOWS_SDK_VERSION` to an installed Windows SDK if it predates the one
+Chromium's `build/` pins. Finally,
 point the addon at the build, using absolute paths. Linux builds also take the
 sysroot PDFium was built against, which
 `python3 build/linux/sysroot_scripts/install-sysroot.py --arch=<arch>` installs as

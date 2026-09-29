@@ -1,4 +1,6 @@
-is_official_build = true
+# Standalone PDFium cannot make an official build, which dates itself from
+# Chromium's version file.
+is_official_build = false
 is_debug = false
 strip_debug_info = true
 symbol_level = 0

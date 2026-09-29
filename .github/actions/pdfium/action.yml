@@ -64,6 +64,7 @@ runs:
 
         cd pdfium
         git apply bare-pdfium/patches/*.patch
+        git -C build apply ../bare-pdfium/patches/build/*.patch
 
         flags="-D GN_DIR=$root/pdfium -D GN_OUT_DIR=$root/pdfium/out/$TARGET"
 
@@ -132,6 +133,12 @@ runs:
 
         Set-Location pdfium
         git apply (Get-ChildItem bare-pdfium/patches/*.patch)
+        git -C build apply (Get-ChildItem bare-pdfium/patches/build/*.patch)
+
+        # Build with the newest desktop SDK the runner has, which may predate Chromium's.
+        $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/Include'
+        $env:WINDOWS_SDK_VERSION = (Get-ChildItem $kits -Directory | Where-Object { Test-Path (Join-Path $_.FullName um) } | Sort-Object { [version]$_.Name } | Select-Object -Last 1).Name
+        Add-Content $env:GITHUB_ENV "WINDOWS_SDK_VERSION=$env:WINDOWS_SDK_VERSION"
 
         New-Item -ItemType Directory -Force "out/$env:TARGET" | Out-Null
         Set-Content "out/$env:TARGET/args.gn" @"
