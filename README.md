@@ -8,7 +8,8 @@ runs (desktop and mobile).
 The motivating use is feeding a PDF to a vision model: classify pages, rasterize
 the ones that carry a figure, encode them (e.g. via `bare-media`), and hand them
 to the model as images. It also merges, splits, rotates, watermarks, encrypts, decrypts
-and fills in the form fields of an existing PDF, and saves the result.
+and fills in the form fields of an existing PDF, and saves the result, and it
+creates new PDFs from Markdown or content blocks.
 
 ## API
 
@@ -285,6 +286,99 @@ argument rejects the promise and never throws. A call still queued when its
 document, or the source of an import, is closed rejects with
 `document is closed`. The one-shots open their input on the calling thread and
 do the edit and the save on the worker.
+
+### Creating
+
+`compose(content, opts)` lays out a new PDF and returns it as a `Buffer`.
+`content` is Markdown or an array of blocks:
+
+```js
+const pdf = pdfium.compose(markdown, { pageSize: 'A4', pageNumbers: true })
+
+const same = pdfium.compose([
+  { type: 'heading', level: 1, text: 'Quarterly Report' },
+  { type: 'paragraph', text: 'Revenue grew **18%** year over year.' },
+  { type: 'list', items: ['Three new sites', { text: 'Irrigation', items: ['North', 'South'] }] },
+  { type: 'table', header: ['Region', 'Revenue'], rows: [['North', '$1.2M']] },
+  { type: 'image', data: pngBytes, width: 300, caption: 'Revenue by month' },
+  { type: 'code', text: 'const total = north + south' },
+  { type: 'quote', text: 'Growth came from the regions we invested in.' },
+  { type: 'rule' },
+  { type: 'pageBreak' }
+])
+```
+
+- Text wraps to the page, flows onto new pages, and never leaves one line of a
+  paragraph alone at the top or bottom of a page. Tables size their columns to
+  their content, wrap their cells and repeat the header row on every page they
+  cross. Images keep their aspect ratio and shrink to fit.
+- Block `text`, list items and table cells take a string, where `**bold**`,
+  `*italic*` and `` `code` `` are applied, or an array of runs
+  `{ text, bold, italic, code }`. A paragraph can take `align: 'center'`, and an
+  ordered list `start`.
+- Markdown covers headings, paragraphs (a line ending in two spaces or `\`
+  breaks), bullet and numbered lists with nesting, block quotes, fenced code,
+  GitHub tables, rules, `\pagebreak` and images. An image draws only from a
+  `data:` URI, as the input is a string with no files beside it; any other
+  source prints its alt text.
+- Images are PNG or JPEG bytes. JPEGs are embedded as they are, and PNGs are
+  decoded with [`bare-png`](https://github.com/holepunchto/bare-png), loaded only
+  when one is used.
+
+| option        | default       | effect                                                                                            |
+| ------------- | ------------- | ------------------------------------------------------------------------------------------------- |
+| `pageSize`    | `'A4'`        | `'A4'`, `'A5'`, `'Letter'`, `'Legal'`, or `[width, height]` in points                             |
+| `landscape`   | `false`       | turn the page size sideways                                                                       |
+| `margin`      | `56.69`       | points on every side (20 mm)                                                                      |
+| `font`        | `'Helvetica'` | `'Helvetica'`, `'Times'`, `'Courier'`, TrueType bytes, or `{ regular, bold, italic, boldItalic }` |
+| `monoFont`    | `'Courier'`   | the same, for code                                                                                |
+| `fontSize`    | `11`          | body size in points; headings scale from it                                                       |
+| `lineHeight`  | `1.4`         | line spacing as a multiple of the font size                                                       |
+| `pageNumbers` | `false`       | print `n / m` at the foot of each page                                                            |
+| `encrypt`     | none          | `{ password, ownerPassword, permissions }`, as for `save`                                         |
+
+The built-in fonts draw Western European text: Latin-1 and the rest of Windows
+code page 1252, such as curly quotes, dashes and `€`. For the rest, emoji and
+the invisible characters around them (variation selectors, joiners, skin tones,
+flags) are left out with any font, since PDFium cannot draw color glyphs. With
+the built-in fonts, common symbols become their nearest plain form (`→` is
+`->`, `≥` is `>=`, `✓` is `v`, other bullets are `•`), accented letters outside
+Latin-1 lose their accent (`ő` is `o`, `ł` is `l`), and other symbols are left
+out. Letters and digits they cannot draw, such as Chinese or Cyrillic, throw and
+name the characters, since dropping them would lose the text; pass TrueType
+fonts for them. The watermark follows the same rules. Each style falls back to
+`regular` when its own font is not given. PDFium embeds the whole font file,
+since it cannot subset one, so a large font such as a pan-Unicode one makes a
+large PDF; prefer a font that covers only the scripts you need. Glyphs are
+placed one after another without shaping, so scripts that need shaping, such
+as Arabic, or Devanagari conjuncts, do not come out right.
+
+`composeAsync` saves on the worker thread; the layout itself runs on the calling
+thread.
+
+The pieces `compose` is built from are there to draw on any page:
+
+```js
+const doc = pdfium.create()
+doc.addPage({ width: 595.28, height: 841.89 }) // => the new page's index; `at` inserts
+const font = doc.loadFont('Helvetica-Bold') // a built-in font name, or TrueType bytes
+
+doc.measureText('Total', font, 12) // => width in points
+doc.fontMetrics(font, 12) // => { ascent, descent }
+
+doc.draw(0, [
+  { type: 'text', text: 'Total', font, size: 12, x: 72, y: 720, color: [0, 0, 0] },
+  { type: 'rect', x: 72, y: 700, width: 200, height: 1, fill: [0, 0, 0] },
+  { type: 'line', x1: 72, y1: 690, x2: 272, y2: 690, color: [150, 150, 150], lineWidth: 0.5 },
+  { type: 'image', image: jpegBytes, x: 72, y: 500, width: 200, height: 150 }
+])
+```
+
+Coordinates are PDF points from the bottom-left corner of the page, and `y` for
+text is its baseline. A rectangle takes `fill`, `stroke` and `lineWidth`, and
+text and fills take `opacity`. The built-in fonts are Helvetica, Times and
+Courier in regular, bold, italic (oblique) and bold italic. `drawAsync` runs
+the drawing on the worker thread.
 
 ### Types
 

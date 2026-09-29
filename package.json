@@ -16,6 +16,7 @@
   "files": [
     "index.js",
     "encrypt.js",
+    "compose.js",
     "index.d.ts",
     "binding.c",
     "binding.js",
@@ -30,7 +31,7 @@
   "scripts": {
     "format": "prettier --write .",
     "lint": "prettier --check .",
-    "test": "brittle-bare test.js test/render.js"
+    "test": "brittle-bare test.js test/compose.js test/render.js"
   },
   "repository": {
     "type": "git",
@@ -44,13 +45,13 @@
   "homepage": "https://github.com/tetherto/bare-pdfium",
   "prettier": "prettier-config-holepunch",
   "dependencies": {
-    "bare-crypto": "^1.15.3"
+    "bare-crypto": "^1.15.3",
+    "bare-png": "^1.0.9"
   },
   "devDependencies": {
     "bare-fs": "^4.8.2",
     "bare-os": "^3.9.3",
     "bare-path": "^3.1.2",
-    "bare-png": "^1.0.9",
     "brittle": "^3.4.0",
     "cmake-bare": "^1.9.0",
     "cmake-gn": "^1.0.1",

@@ -577,6 +577,8 @@ test('watermark validates its options', (t) => {
   t.exception.all(() => addon.watermark(textPdf(), 'x', { position: 'side' }), /position/)
   t.exception.all(() => addon.watermark(textPdf(), 'x', { opacity: 2 }), /opacity/)
   t.exception.all(() => addon.watermark(textPdf(), '草稿'), /TrueType font/)
+  t.exception.all(() => addon.watermark(textPdf(), '🌿🌿'), /nothing that can be drawn/)
+  t.ok(pageTexts(addon.watermark(textPdf(), '🌿 DRAFT'))[0].includes('DRAFT'), 'emoji are dropped')
 })
 
 test('fields lists the form with types, values and options', (t) => {

@@ -41,7 +41,17 @@ typedef struct {
   void *buf;
   FILE *file;
   FPDF_FILEACCESS access;
+  FPDF_FONT *fonts;
+  size_t font_count;
 } bare_pdfium_doc_t;
+
+static void
+bare_pdfium__close_fonts(bare_pdfium_doc_t *handle) {
+  for (size_t i = 0; i < handle->font_count; i++) FPDFFont_Close(handle->fonts[i]);
+  free(handle->fonts);
+  handle->fonts = NULL;
+  handle->font_count = 0;
+}
 
 typedef struct {
   int width;
@@ -93,6 +103,7 @@ static void
 bare_pdfium__on_doc_finalize(js_env_t *env, void *data, void *finalize_hint) {
   bare_pdfium_doc_t *handle = (bare_pdfium_doc_t *) data;
   bare_pdfium__lock();
+  bare_pdfium__close_fonts(handle);
   if (handle->doc) FPDF_CloseDocument(handle->doc);
   bare_pdfium__unlock();
   if (handle->file) fclose(handle->file);
@@ -381,7 +392,7 @@ bare_pdfium_open(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
-  bare_pdfium_doc_t *handle = malloc(sizeof(bare_pdfium_doc_t));
+  bare_pdfium_doc_t *handle = calloc(1, sizeof(bare_pdfium_doc_t));
   handle->doc = doc;
   handle->buf = copy;
   handle->file = NULL;
@@ -437,7 +448,7 @@ bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
-  bare_pdfium_doc_t *handle = malloc(sizeof(bare_pdfium_doc_t));
+  bare_pdfium_doc_t *handle = calloc(1, sizeof(bare_pdfium_doc_t));
   handle->doc = NULL;
   handle->buf = NULL;
   handle->file = file;
@@ -478,6 +489,7 @@ bare_pdfium_close(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
   // idempotent: the finalizer frees the struct, so null the fields it would touch
   bare_pdfium__lock();
+  bare_pdfium__close_fonts(handle);
   if (handle->doc) {
     FPDF_CloseDocument(handle->doc);
     handle->doc = NULL;
@@ -1537,6 +1549,34 @@ bare_pdfium__free_entries(bare_pdfium_entry_t *entries, size_t count) {
 }
 
 typedef enum {
+  BARE_PDFIUM_DRAW_TEXT,
+  BARE_PDFIUM_DRAW_RECT,
+  BARE_PDFIUM_DRAW_LINE,
+  BARE_PDFIUM_DRAW_IMAGE
+} bare_pdfium_draw_kind_t;
+
+typedef struct {
+  bare_pdfium_draw_kind_t kind;
+  int32_t font;
+  double size;
+  double x;
+  double y;
+  double x2;
+  double y2;
+  double width;
+  double height;
+  double line_width;
+  uint32_t fill;
+  uint32_t stroke;
+  utf16_t *text;
+  uint8_t *data;
+  size_t data_len;
+  int32_t pixel_width;
+  int32_t pixel_height;
+  bool jpeg;
+} bare_pdfium_draw_item_t;
+
+typedef enum {
   BARE_PDFIUM_RESULT_NONE,
   BARE_PDFIUM_RESULT_BUFFER,
   BARE_PDFIUM_RESULT_WIDGETS
@@ -1572,6 +1612,8 @@ struct bare_pdfium_edit_job_s {
   size_t len;
   bare_pdfium_widget_t *widgets;
   size_t widget_count;
+  bare_pdfium_draw_item_t *items;
+  size_t item_count;
 };
 
 typedef void (*bare_pdfium_edit_setup_fn)(js_env_t *env, js_value_t **argv, bare_pdfium_edit_job_t *job);
@@ -1718,6 +1760,11 @@ bare_pdfium__free_edit(bare_pdfium_edit_job_t *job) {
   free(job->data);
   bare_pdfium__free_entries(job->entries, job->entry_count);
   bare_pdfium__free_widgets(job->widgets, job->widget_count);
+  for (size_t i = 0; i < job->item_count; i++) {
+    free(job->items[i].text);
+    free(job->items[i].data);
+  }
+  free(job->items);
   free(job);
 }
 
@@ -1813,6 +1860,207 @@ bare_pdfium__edit(js_env_t *env, js_callback_info_t *info, bare_pdfium_edit_setu
   return promise;
 }
 
+static double
+bare_pdfium__number(js_env_t *env, js_value_t *object, const char *name) {
+  int err;
+  js_value_t *value;
+  err = js_get_named_property(env, object, name, &value);
+  assert(err == 0);
+  js_value_type_t type;
+  err = js_typeof(env, value, &type);
+  assert(err == 0);
+  if (type != js_number) return 0;
+  double result;
+  err = js_get_value_double(env, value, &result);
+  assert(err == 0);
+  return result;
+}
+
+static js_value_t *
+bare_pdfium__property(js_env_t *env, js_value_t *object, const char *name) {
+  js_value_t *value;
+  int err = js_get_named_property(env, object, name, &value);
+  assert(err == 0);
+  return value;
+}
+
+static uint8_t *
+bare_pdfium__copy_bytes(js_env_t *env, js_value_t *value, size_t *len) {
+  void *data;
+  int err = js_get_typedarray_info(env, value, NULL, &data, len, NULL, NULL);
+  assert(err == 0);
+  uint8_t *copy = malloc(*len ? *len : 1);
+  memcpy(copy, data, *len);
+  return copy;
+}
+
+typedef struct {
+  const uint8_t *data;
+  size_t len;
+} bare_pdfium_memory_t;
+
+static int
+bare_pdfium__memory_block(void *param, unsigned long position, unsigned char *buf, unsigned long size) {
+  bare_pdfium_memory_t *memory = (bare_pdfium_memory_t *) param;
+  if (position > memory->len || size > memory->len - position) return 0;
+  memcpy(buf, memory->data + position, size);
+  return 1;
+}
+
+static void
+bare_pdfium__set_colors(FPDF_PAGEOBJECT object, uint32_t fill, uint32_t stroke, double line_width) {
+  if (fill & 0xff) FPDFPageObj_SetFillColor(object, fill >> 24, (fill >> 16) & 0xff, (fill >> 8) & 0xff, fill & 0xff);
+  if (stroke & 0xff) {
+    FPDFPageObj_SetStrokeColor(object, stroke >> 24, (stroke >> 16) & 0xff, (stroke >> 8) & 0xff, stroke & 0xff);
+    FPDFPageObj_SetStrokeWidth(object, (float) line_width);
+  }
+}
+
+static FPDF_PAGEOBJECT
+bare_pdfium__draw_image(FPDF_DOCUMENT doc, FPDF_PAGE page, const bare_pdfium_draw_item_t *item) {
+  FPDF_PAGEOBJECT object = FPDFPageObj_NewImageObj(doc);
+  if (object == NULL) return NULL;
+
+  bool ok;
+  if (item->jpeg) {
+    bare_pdfium_memory_t memory = {item->data, item->data_len};
+    FPDF_FILEACCESS access = {(unsigned long) item->data_len, bare_pdfium__memory_block, &memory};
+    ok = FPDFImageObj_LoadJpegFileInline(&page, 1, object, &access);
+  } else {
+    FPDF_BITMAP bitmap = FPDFBitmap_Create(item->pixel_width, item->pixel_height, 1);
+    ok = bitmap != NULL;
+    if (ok) {
+      uint8_t *pixels = (uint8_t *) FPDFBitmap_GetBuffer(bitmap);
+      int stride = FPDFBitmap_GetStride(bitmap);
+      for (int y = 0; y < item->pixel_height; y++) {
+        const uint8_t *src = item->data + (size_t) y * item->pixel_width * 4;
+        uint8_t *dst = pixels + (size_t) y * stride;
+        for (int x = 0; x < item->pixel_width; x++) {
+          dst[x * 4 + 0] = src[x * 4 + 2];
+          dst[x * 4 + 1] = src[x * 4 + 1];
+          dst[x * 4 + 2] = src[x * 4 + 0];
+          dst[x * 4 + 3] = src[x * 4 + 3];
+        }
+      }
+      ok = FPDFImageObj_SetBitmap(&page, 1, object, bitmap);
+      FPDFBitmap_Destroy(bitmap);
+    }
+  }
+
+  if (!ok || !FPDFImageObj_SetMatrix(object, item->width, 0, 0, item->height, item->x, item->y)) {
+    FPDFPageObj_Destroy(object);
+    return NULL;
+  }
+  return object;
+}
+
+static const char *
+bare_pdfium__draw_work(bare_pdfium_edit_job_t *job) {
+  bare_pdfium_doc_t *handle = job->handle;
+  FPDF_PAGE page = FPDF_LoadPage(handle->doc, job->number);
+  if (page == NULL) return "failed to load page";
+
+  const char *error = NULL;
+  for (size_t i = 0; i < job->item_count && error == NULL; i++) {
+    const bare_pdfium_draw_item_t *item = &job->items[i];
+    FPDF_PAGEOBJECT object = NULL;
+
+    switch (item->kind) {
+    case BARE_PDFIUM_DRAW_TEXT:
+      if (item->font < 0 || (size_t) item->font >= handle->font_count) {
+        error = "unknown font";
+        break;
+      }
+      object = FPDFPageObj_CreateTextObj(handle->doc, handle->fonts[item->font], (float) item->size);
+      if (object == NULL || !FPDFText_SetText(object, (FPDF_WIDESTRING) item->text)) {
+        if (object) FPDFPageObj_Destroy(object);
+        object = NULL;
+        error = "failed to create text";
+        break;
+      }
+      bare_pdfium__set_colors(object, item->fill, 0, 0);
+      FPDFPageObj_Transform(object, 1, 0, 0, 1, item->x, item->y);
+      break;
+    case BARE_PDFIUM_DRAW_RECT:
+      object = FPDFPageObj_CreateNewRect((float) item->x, (float) item->y, (float) item->width, (float) item->height);
+      if (object == NULL) {
+        error = "failed to create rectangle";
+        break;
+      }
+      bare_pdfium__set_colors(object, item->fill, item->stroke, item->line_width);
+      FPDFPath_SetDrawMode(object, (item->fill & 0xff) ? FPDF_FILLMODE_WINDING : FPDF_FILLMODE_NONE, (item->stroke & 0xff) != 0);
+      break;
+    case BARE_PDFIUM_DRAW_LINE:
+      object = FPDFPageObj_CreateNewPath((float) item->x, (float) item->y);
+      if (object == NULL || !FPDFPath_LineTo(object, (float) item->x2, (float) item->y2)) {
+        if (object) FPDFPageObj_Destroy(object);
+        object = NULL;
+        error = "failed to create line";
+        break;
+      }
+      bare_pdfium__set_colors(object, 0, item->stroke, item->line_width);
+      FPDFPath_SetDrawMode(object, FPDF_FILLMODE_NONE, true);
+      break;
+    case BARE_PDFIUM_DRAW_IMAGE:
+      object = bare_pdfium__draw_image(handle->doc, page, item);
+      if (object == NULL) error = "failed to load image";
+      break;
+    }
+
+    if (object) FPDFPage_InsertObject(page, object);
+  }
+
+  if (error == NULL && !FPDFPage_GenerateContent(page)) error = "failed to write page content";
+  FPDF_ClosePage(page);
+  return error;
+}
+
+static void
+bare_pdfium__draw_setup(js_env_t *env, js_value_t **argv, bare_pdfium_edit_job_t *job) {
+  int err;
+
+  err = js_get_value_int32(env, argv[1], &job->number);
+  assert(err == 0);
+
+  uint32_t count;
+  err = js_get_array_length(env, argv[2], &count);
+  assert(err == 0);
+
+  job->items = calloc(count ? count : 1, sizeof(bare_pdfium_draw_item_t));
+  job->item_count = count;
+
+  for (uint32_t i = 0; i < count; i++) {
+    js_value_t *value;
+    err = js_get_element(env, argv[2], i, &value);
+    assert(err == 0);
+
+    bare_pdfium_draw_item_t *item = &job->items[i];
+    item->kind = (bare_pdfium_draw_kind_t) bare_pdfium__number(env, value, "kind");
+    item->x = bare_pdfium__number(env, value, "x");
+    item->y = bare_pdfium__number(env, value, "y");
+    item->x2 = bare_pdfium__number(env, value, "x2");
+    item->y2 = bare_pdfium__number(env, value, "y2");
+    item->width = bare_pdfium__number(env, value, "width");
+    item->height = bare_pdfium__number(env, value, "height");
+    item->size = bare_pdfium__number(env, value, "size");
+    item->line_width = bare_pdfium__number(env, value, "lineWidth");
+    item->fill = (uint32_t) bare_pdfium__number(env, value, "fill");
+    item->stroke = (uint32_t) bare_pdfium__number(env, value, "stroke");
+    item->font = (int32_t) bare_pdfium__number(env, value, "font");
+
+    if (item->kind == BARE_PDFIUM_DRAW_TEXT) {
+      item->text = bare_pdfium__utf16(env, bare_pdfium__property(env, value, "text"));
+    } else if (item->kind == BARE_PDFIUM_DRAW_IMAGE) {
+      item->jpeg = bare_pdfium__number(env, value, "jpeg") != 0;
+      item->pixel_width = (int32_t) bare_pdfium__number(env, value, "pixelWidth");
+      item->pixel_height = (int32_t) bare_pdfium__number(env, value, "pixelHeight");
+      item->data = bare_pdfium__copy_bytes(env, bare_pdfium__property(env, value, "data"), &item->data_len);
+    }
+  }
+
+  job->work = bare_pdfium__draw_work;
+}
+
 #define BARE_PDFIUM_EDIT(name, setup) \
   static js_value_t *bare_pdfium_##name(js_env_t *env, js_callback_info_t *info) { \
     return bare_pdfium__edit(env, info, setup, false); \
@@ -1827,8 +2075,200 @@ BARE_PDFIUM_EDIT(watermark, bare_pdfium__watermark_setup)
 BARE_PDFIUM_EDIT(save, bare_pdfium__save_setup)
 BARE_PDFIUM_EDIT(form_widgets, bare_pdfium__widgets_setup)
 BARE_PDFIUM_EDIT(fill_form, bare_pdfium__fill_setup)
+BARE_PDFIUM_EDIT(draw, bare_pdfium__draw_setup)
 
 #undef BARE_PDFIUM_EDIT
+
+static js_value_t *
+bare_pdfium_new_page(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 4;
+  js_value_t *argv[4];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+
+  int32_t index;
+  err = js_get_value_int32(env, argv[1], &index);
+  assert(err == 0);
+
+  double width, height;
+  err = js_get_value_double(env, argv[2], &width);
+  assert(err == 0);
+  err = js_get_value_double(env, argv[3], &height);
+  assert(err == 0);
+
+  bare_pdfium__lock();
+  FPDF_PAGE page = FPDFPage_New(handle->doc, index, width, height);
+  if (page) FPDF_ClosePage(page);
+  bare_pdfium__unlock();
+
+  if (page == NULL) bare_pdfium__throw(env, "failed to add page");
+
+  return NULL;
+}
+
+static js_value_t *
+bare_pdfium_load_font(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+
+  bool is_bytes;
+  err = js_is_typedarray(env, argv[1], &is_bytes);
+  assert(err == 0);
+
+  uint8_t *data = NULL;
+  size_t len = 0;
+  char name[64] = {0};
+  if (is_bytes) {
+    data = bare_pdfium__copy_bytes(env, argv[1], &len);
+  } else {
+    size_t written;
+    err = js_get_value_string_utf8(env, argv[1], (utf8_t *) name, sizeof(name) - 1, &written);
+    assert(err == 0);
+    name[written] = '\0';
+  }
+
+  int32_t index = -1;
+
+  bare_pdfium__lock();
+  FPDF_FONT font = is_bytes
+    ? FPDFText_LoadFont(handle->doc, data, (uint32_t) len, FPDF_FONT_TRUETYPE, true)
+    : FPDFText_LoadStandardFont(handle->doc, name);
+  if (font) {
+    FPDF_FONT *fonts = realloc(handle->fonts, (handle->font_count + 1) * sizeof(FPDF_FONT));
+    if (fonts) {
+      handle->fonts = fonts;
+      handle->fonts[handle->font_count] = font;
+      index = (int32_t) handle->font_count++;
+    } else {
+      FPDFFont_Close(font);
+    }
+  }
+  bare_pdfium__unlock();
+
+  free(data);
+
+  if (index < 0) {
+    bare_pdfium__throw(env, "failed to load font");
+    return NULL;
+  }
+
+  js_value_t *result;
+  err = js_create_int32(env, index, &result);
+  assert(err == 0);
+  return result;
+}
+
+static js_value_t *
+bare_pdfium_measure(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 3;
+  js_value_t *argv[3];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+
+  int32_t index;
+  err = js_get_value_int32(env, argv[1], &index);
+  assert(err == 0);
+
+  utf16_t *text = bare_pdfium__utf16(env, argv[2]);
+
+  double total = 0;
+  bool known = true;
+
+  bare_pdfium__lock();
+  if (index < 0 || (size_t) index >= handle->font_count) {
+    known = false;
+  } else {
+    FPDF_FONT font = handle->fonts[index];
+    for (size_t i = 0; text[i]; i++) {
+      uint32_t code = text[i];
+      if (code >= 0xd800 && code <= 0xdbff && text[i + 1] >= 0xdc00 && text[i + 1] <= 0xdfff) {
+        code = 0x10000 + ((code - 0xd800) << 10) + (text[++i] - 0xdc00);
+      }
+      float width;
+      if (FPDFFont_GetGlyphWidth(font, code, 1000, &width)) total += width;
+    }
+  }
+  bare_pdfium__unlock();
+
+  free(text);
+
+  if (!known) {
+    bare_pdfium__throw(env, "unknown font");
+    return NULL;
+  }
+
+  js_value_t *result;
+  err = js_create_double(env, total, &result);
+  assert(err == 0);
+  return result;
+}
+
+static js_value_t *
+bare_pdfium_font_metrics(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+
+  int32_t index;
+  err = js_get_value_int32(env, argv[1], &index);
+  assert(err == 0);
+
+  float ascent = 0, descent = 0;
+  bool known = true;
+
+  bare_pdfium__lock();
+  if (index < 0 || (size_t) index >= handle->font_count) {
+    known = false;
+  } else {
+    FPDFFont_GetAscent(handle->fonts[index], 1000, &ascent);
+    FPDFFont_GetDescent(handle->fonts[index], 1000, &descent);
+  }
+  bare_pdfium__unlock();
+
+  if (!known) {
+    bare_pdfium__throw(env, "unknown font");
+    return NULL;
+  }
+
+  js_value_t *result;
+  err = js_create_object(env, &result);
+  assert(err == 0);
+
+  js_value_t *value;
+  err = js_create_double(env, ascent, &value);
+  assert(err == 0);
+  err = js_set_named_property(env, result, "ascent", value);
+  assert(err == 0);
+  err = js_create_double(env, descent, &value);
+  assert(err == 0);
+  err = js_set_named_property(env, result, "descent", value);
+  assert(err == 0);
+
+  return result;
+}
 
 static js_value_t *
 bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
@@ -1867,6 +2307,27 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("saveAsync", bare_pdfium_save_async)
   V("formWidgetsAsync", bare_pdfium_form_widgets_async)
   V("fillFormAsync", bare_pdfium_fill_form_async)
+  V("newPage", bare_pdfium_new_page)
+  V("loadFont", bare_pdfium_load_font)
+  V("measure", bare_pdfium_measure)
+  V("fontMetrics", bare_pdfium_font_metrics)
+  V("draw", bare_pdfium_draw)
+  V("drawAsync", bare_pdfium_draw_async)
+#undef V
+
+#define V(name, n) \
+  { \
+    js_value_t *val; \
+    err = js_create_uint32(env, n, &val); \
+    assert(err == 0); \
+    err = js_set_named_property(env, exports, name, val); \
+    assert(err == 0); \
+  }
+
+  V("DRAW_TEXT", BARE_PDFIUM_DRAW_TEXT)
+  V("DRAW_RECT", BARE_PDFIUM_DRAW_RECT)
+  V("DRAW_LINE", BARE_PDFIUM_DRAW_LINE)
+  V("DRAW_IMAGE", BARE_PDFIUM_DRAW_IMAGE)
 #undef V
 
   return exports;
