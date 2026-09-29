@@ -27,21 +27,21 @@ jobs:
           - os: ubuntu-24.04
             platform: android
             arch: ia32
-          - os: macos-14
+          - os: macos-15
             platform: darwin
             arch: x64
-          - os: macos-14
+          - os: macos-15
             platform: darwin
             arch: arm64
-          - os: macos-14
+          - os: macos-15
             platform: ios
             arch: arm64
-          - os: macos-14
+          - os: macos-15
             platform: ios
             arch: arm64
             tags: -simulator
             flags: --simulator
-          - os: macos-14
+          - os: macos-15
             platform: ios
             arch: x64
             tags: -simulator
@@ -55,6 +55,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: Build / ${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.tags }}
     steps:
+      - name: Install clang 18
+        if: matrix.platform == 'linux'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb https://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm-18.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y clang-18 clang-tools-18 lld-18
       - uses: holepunchto/actions/bare-base@v1
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
