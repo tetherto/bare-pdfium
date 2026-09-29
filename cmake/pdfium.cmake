@@ -212,6 +212,16 @@ if(APPLE)
       "-framework CoreGraphics"
   )
 elseif(WIN32)
+  set(pdfium_lean_sources ${pdfium_sources})
+  list(FILTER pdfium_lean_sources EXCLUDE REGEX "/core/fxge/")
+
+  # Chromium builds everything but fxge's GDI code lean, which keeps winspool.h from renaming SetForm.
+  set_source_files_properties(
+    ${pdfium_lean_sources}
+    PROPERTIES
+    COMPILE_DEFINITIONS WIN32_LEAN_AND_MEAN
+  )
+
   target_compile_definitions(
     pdfium
     PRIVATE
