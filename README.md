@@ -7,8 +7,8 @@ runs (desktop and mobile).
 
 The motivating use is feeding a PDF to a vision model: classify pages, rasterize
 the ones that carry a figure, encode them (e.g. via `bare-media`), and hand them
-to the model as images. It also merges, splits, rotates, watermarks, decrypts and
-fills in the form fields of an existing PDF, and saves the result.
+to the model as images. It also merges, splits, rotates, watermarks, encrypts, decrypts
+and fills in the form fields of an existing PDF, and saves the result.
 
 ## API
 
@@ -188,6 +188,11 @@ doc.fillFields({ name: 'Ada Lovelace', agree: true, color: 'blue', size: 'M' })
 
 // => Buffer; removeSecurity drops the encryption of a document opened with its password
 doc.save({ removeSecurity: false })
+
+// => Buffer, locked with AES-256
+doc.save({
+  encrypt: { password: 'open sesame', ownerPassword: 'admin', permissions: { copy: false } }
+})
 ```
 
 - `pages` — zero-based page indexes. Omitted, an edit applies to every page.
@@ -222,8 +227,25 @@ doc.save({ removeSecurity: false })
   regenerated as a viewer would draw it, and each value is read back afterwards;
   a field that did not take its value throws. Returns the filled fields.
 - `save()` keeps the document's encryption. To decrypt, open with the password
-  and save with `removeSecurity: true`. PDFium does not write encryption, so
-  there is no way to add a password.
+  and save with `removeSecurity: true`.
+- `save({ encrypt })` locks the saved PDF with AES-256 (PDF 2.0 security handler,
+  revision 6), replacing any encryption it had. PDFium cannot write encryption,
+  so the saved bytes are encrypted afterwards in JavaScript with
+  [`bare-crypto`](https://github.com/holepunchto/bare-crypto), which is loaded
+  only when this option is used:
+
+  | option          | default     | effect                                                                                                                         |
+  | --------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+  | `password`      | required    | the password that opens the file; `''` opens it without one                                                                    |
+  | `ownerPassword` | random      | also opens the file, and lifts the permission limits                                                                           |
+  | `permissions`   | all allowed | set any of these to `false` to restrict it: `print`, `modify`, `copy`, `annotate`, `fillForms`, `assemble`, `printHighQuality` |
+
+  Without an `ownerPassword` a random one is used, so the limits cannot be
+  lifted; an empty `password` therefore needs one. Readers honour permissions
+  voluntarily, so they restrict what a viewer offers rather than protect the
+  content. Passwords longer than 127 bytes of UTF-8 are truncated, as the
+  standard requires. In `saveAsync` the save runs on the worker and the
+  encryption on the calling thread.
 
 The one-shot forms open the input, apply one edit and return the saved PDF:
 
@@ -232,19 +254,20 @@ pdfium.merge([a, b, c])
 pdfium.extractPages(bytes, [0, 1, 2])
 pdfium.rotate(bytes, 90, { pages: [0] })
 pdfium.decrypt(bytes, 'password')
+pdfium.encrypt(bytes, 'password', { ownerPassword: 'admin', permissions: { print: false } })
 pdfium.watermark(bytes, 'CONFIDENTIAL', { opacity: 0.2 })
 pdfium.fields(bytes)
 pdfium.fillFields(bytes, { name: 'Ada Lovelace' })
 ```
 
-Every one-shot but `merge` and `decrypt` takes `password` in its options for an
+Every one-shot but `merge`, `decrypt` and `encrypt` takes `password` in its options for an
 encrypted input.
 
 Each edit also has an async form that runs on a libuv worker thread, the same way
 `renderAsync` does: `importPagesAsync`, `rotateAsync`, `watermarkAsync`,
 `fieldsAsync`, `fillFieldsAsync` and `saveAsync` on a document, and `mergeAsync`,
 `extractPagesAsync`, `rotateAsync`, `decryptAsync`, `watermarkAsync`,
-`fieldsAsync` and `fillFieldsAsync` as one-shots. They resolve to what the sync
+`fieldsAsync`, `fillFieldsAsync` and `encryptAsync` as one-shots. They resolve to what the sync
 form returns.
 
 ```js

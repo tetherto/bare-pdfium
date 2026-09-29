@@ -15,6 +15,7 @@
   "types": "./index.d.ts",
   "files": [
     "index.js",
+    "encrypt.js",
     "index.d.ts",
     "binding.c",
     "binding.js",
@@ -42,6 +43,9 @@
   },
   "homepage": "https://github.com/tetherto/bare-pdfium",
   "prettier": "prettier-config-holepunch",
+  "dependencies": {
+    "bare-crypto": "^1.15.3"
+  },
   "devDependencies": {
     "bare-fs": "^4.8.2",
     "bare-os": "^3.9.3",
