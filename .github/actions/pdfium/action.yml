@@ -85,8 +85,13 @@ runs:
         import("//bare-pdfium/gn/target/$TARGET.gni")
         EOF
 
+        targets="pdfium buildtools/third_party/libc++:libc++"
+        case "$os" in
+          linux|android) targets="$targets buildtools/third_party/libc++abi:libc++abi" ;;
+        esac
+
         gn gen "out/$TARGET"
-        autoninja -C "out/$TARGET" pdfium buildtools/third_party/libc++:libc++
+        autoninja -C "out/$TARGET" $targets
 
         echo "flags=$flags" >> "$GITHUB_OUTPUT"
 
