@@ -10,6 +10,16 @@ project(bare_pdfium C)
 
 if(NOT TARGET c++ AND NOT WIN32)
   add_gn_target(c++ buildtools/third_party/libc++:libc++)
+
+  if(NOT APPLE)
+    add_gn_target(c++abi buildtools/third_party/libc++abi:libc++abi)
+
+    target_link_libraries(
+      c++
+      INTERFACE
+        c++abi
+    )
+  endif()
 endif()
 
 if(NOT TARGET pdfium)

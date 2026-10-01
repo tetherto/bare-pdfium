@@ -204,6 +204,8 @@ gn gen out/<target> --args='import("//bare-pdfium/gn/pdfium.gni") import("//bare
 autoninja -C out/<target> pdfium buildtools/third_party/libc++:libc++
 ```
 
+For linux and android targets, also build `buildtools/third_party/libc++abi:libc++abi`,
+which Chromium keeps out of `libc++` there and the addon links in alongside it.
 On Windows, build only `pdfium`, as PDFium uses the MSVC STL there. Chromium's
 `build/` needs the Windows SDK it pins (10.0.28000), which Visual Studio 2022
 does not install by default. Finally,
@@ -261,7 +263,8 @@ publishes as `release-<major>.<minor>`.
 
 This wrapper is Apache-2.0. The bundled PDFium (shipped in `prebuilds/`) is
 BSD-3-Clause and Apache-2.0 (© The PDFium Authors) and statically links further
-permissive components, along with LLVM's libc++ outside Windows. See `NOTICE.md`
+permissive components, along with LLVM's libc++ outside Windows and its libc++abi and libunwind on
+Linux and Android. See `NOTICE.md`
 — a shipping application must carry these attributions.
 
 ## Why not pdf.js?
