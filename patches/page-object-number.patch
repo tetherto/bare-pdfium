@@ -1,0 +1,31 @@
+diff --git a/fpdfsdk/fpdf_editpage.cpp b/fpdfsdk/fpdf_editpage.cpp
+index 758aae8..9cc644e 100644
+--- a/fpdfsdk/fpdf_editpage.cpp
++++ b/fpdfsdk/fpdf_editpage.cpp
+@@ -294,6 +294,12 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetRotation(FPDF_PAGE page) {
+   return IsPageObject(pPage) ? pPage->GetPageRotation() : -1;
+ }
+ 
++FPDF_EXPORT unsigned long FPDF_CALLCONV
++FPDFPage_GetObjectNumber(FPDF_PAGE page) {
++  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
++  return IsPageObject(pPage) ? pPage->GetDict()->GetObjNum() : 0;
++}
++
+ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+ FPDFPage_InsertObject(FPDF_PAGE page, FPDF_PAGEOBJECT page_object) {
+   CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+diff --git a/public/fpdf_edit.h b/public/fpdf_edit.h
+index 2dbd60d..792a494 100644
+--- a/public/fpdf_edit.h
++++ b/public/fpdf_edit.h
+@@ -171,6 +171,9 @@ FPDF_MovePages(FPDF_DOCUMENT document,
+ // Or returns -1 on error.
+ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetRotation(FPDF_PAGE page);
+ 
++FPDF_EXPORT unsigned long FPDF_CALLCONV
++FPDFPage_GetObjectNumber(FPDF_PAGE page);
++
+ // Set rotation for |page|.
+ //
+ //   page   - handle to a page.

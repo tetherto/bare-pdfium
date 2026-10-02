@@ -1,0 +1,68 @@
+diff --git a/core/fpdfapi/edit/cpdf_creator.cpp b/core/fpdfapi/edit/cpdf_creator.cpp
+index 31e004f..86c6229 100644
+--- a/core/fpdfapi/edit/cpdf_creator.cpp
++++ b/core/fpdfapi/edit/cpdf_creator.cpp
+@@ -139,7 +139,8 @@ bool CPDF_Creator::WriteIndirectObj(uint32_t objnum, const CPDF_Object* pObj) {
+ 
+   std::unique_ptr<CPDF_Encryptor> encryptor;
+   if (GetCryptoHandler() && pObj != encrypt_dict_) {
+-    encryptor = std::make_unique<CPDF_Encryptor>(GetCryptoHandler(), objnum);
++    encryptor = std::make_unique<CPDF_Encryptor>(
++        GetCryptoHandler(), objnum, security_handler_->IsMetadataEncrypted());
+   }
+ 
+   if (!pObj->WriteTo(archive_.get(), encryptor.get())) {
+diff --git a/core/fpdfapi/parser/cpdf_encryptor.cpp b/core/fpdfapi/parser/cpdf_encryptor.cpp
+index c15c826..8e43b6c 100644
+--- a/core/fpdfapi/parser/cpdf_encryptor.cpp
++++ b/core/fpdfapi/parser/cpdf_encryptor.cpp
+@@ -12,8 +12,10 @@
+ #include "core/fxcrt/check.h"
+ #include "core/fxcrt/data_vector.h"
+ 
+-CPDF_Encryptor::CPDF_Encryptor(const CPDF_CryptoHandler* pHandler, int objnum)
+-    : handler_(pHandler), obj_num_(objnum) {
++CPDF_Encryptor::CPDF_Encryptor(const CPDF_CryptoHandler* pHandler,
++                               int objnum,
++                               bool encrypt_metadata)
++    : handler_(pHandler), obj_num_(objnum), encrypt_metadata_(encrypt_metadata) {
+   DCHECK(handler_);
+ }
+ 
+diff --git a/core/fpdfapi/parser/cpdf_encryptor.h b/core/fpdfapi/parser/cpdf_encryptor.h
+index 3a25fe3..1149d8a 100644
+--- a/core/fpdfapi/parser/cpdf_encryptor.h
++++ b/core/fpdfapi/parser/cpdf_encryptor.h
+@@ -17,14 +17,18 @@ class CPDF_CryptoHandler;
+ 
+ class CPDF_Encryptor {
+  public:
+-  CPDF_Encryptor(const CPDF_CryptoHandler* pHandler, int objnum);
++  CPDF_Encryptor(const CPDF_CryptoHandler* pHandler,
++                 int objnum,
++                 bool encrypt_metadata);
+   ~CPDF_Encryptor();
+ 
+   DataVector<uint8_t> Encrypt(pdfium::span<const uint8_t> src_data) const;
++  bool encrypt_metadata() const { return encrypt_metadata_; }
+ 
+  private:
+   UnownedPtr<const CPDF_CryptoHandler> const handler_;
+   const int obj_num_;
++  const bool encrypt_metadata_;
+ };
+ 
+ #endif  // CORE_FPDFAPI_PARSER_CPDF_ENCRYPTOR_H_
+diff --git a/core/fpdfapi/parser/cpdf_stream.cpp b/core/fpdfapi/parser/cpdf_stream.cpp
+index d6700e8..f19b4f4 100644
+--- a/core/fpdfapi/parser/cpdf_stream.cpp
++++ b/core/fpdfapi/parser/cpdf_stream.cpp
+@@ -181,7 +181,7 @@ bool CPDF_Stream::WriteTo(IFX_ArchiveStream* archive,
+ 
+   DataVector<uint8_t> encrypted_data;
+   pdfium::span<const uint8_t> data = encoder.GetSpan();
+-  if (encryptor && !is_metadata) {
++  if (encryptor && (!is_metadata || encryptor->encrypt_metadata())) {
+     encrypted_data = encryptor->Encrypt(data);
+     data = encrypted_data;
+   }

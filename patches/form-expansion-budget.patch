@@ -1,0 +1,46 @@
+diff --git a/core/fpdfapi/page/cpdf_contentparser.cpp b/core/fpdfapi/page/cpdf_contentparser.cpp
+index 1d6bd7b..7b2f70d 100644
+--- a/core/fpdfapi/page/cpdf_contentparser.cpp
++++ b/core/fpdfapi/page/cpdf_contentparser.cpp
+@@ -212,6 +212,7 @@ CPDF_ContentParser::Stage CPDF_ContentParser::PrepareContent() {
+ CPDF_ContentParser::Stage CPDF_ContentParser::Parse() {
+   if (!parser_) {
+     recursion_state_.parsed_set.clear();
++    recursion_state_.form_count = 0;
+     parser_ = std::make_unique<CPDF_StreamContentParser>(
+         page_object_holder_->GetDocument(),
+         page_object_holder_->GetMutablePageResources(), nullptr, nullptr,
+diff --git a/core/fpdfapi/page/cpdf_form.h b/core/fpdfapi/page/cpdf_form.h
+index ae864b0..252a7d0 100644
+--- a/core/fpdfapi/page/cpdf_form.h
++++ b/core/fpdfapi/page/cpdf_form.h
+@@ -29,6 +29,7 @@ class CPDF_Form final : public CPDF_PageObjectHolder,
+     ~RecursionState();
+ 
+     std::set<const uint8_t*> parsed_set;
++    size_t form_count = 0;
+   };
+ 
+   // Helper method to choose the first non-null resources dictionary.
+diff --git a/core/fpdfapi/page/cpdf_streamcontentparser.cpp b/core/fpdfapi/page/cpdf_streamcontentparser.cpp
+index a0d239f..2753eaa 100644
+--- a/core/fpdfapi/page/cpdf_streamcontentparser.cpp
++++ b/core/fpdfapi/page/cpdf_streamcontentparser.cpp
+@@ -53,6 +53,7 @@
+ namespace {
+ 
+ constexpr int kMaxFormLevel = 40;
++constexpr size_t kMaxFormCount = 100000;
+ 
+ constexpr int kSingleCoordinatePair = 1;
+ constexpr int kTensorCoordinatePairs = 16;
+@@ -818,6 +819,9 @@ void CPDF_StreamContentParser::Handle_ExecuteXObject() {
+ 
+ void CPDF_StreamContentParser::AddForm(RetainPtr<CPDF_Stream> pStream,
+                                        const ByteString& name) {
++  if (++recursion_state_->form_count > kMaxFormCount) {
++    return;
++  }
+   CPDF_AllStates status;
+   status.mutable_general_state() = cur_states_->general_state();
+   status.mutable_graph_state() = cur_states_->graph_state();

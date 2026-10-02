@@ -148,7 +148,7 @@ test('extractText is empty for a page with no text layer', (t) => {
 
 test('extractText rejects an out-of-range page', (t) => {
   const doc = addon.open(textPdf())
-  t.exception(() => doc.extractText(5))
+  t.exception.all(() => doc.extractText(5))
   doc.close()
 })
 
@@ -207,7 +207,7 @@ test('render does not deadlock when a GC finalizes unclosed documents', (t) => {
 })
 
 test('render rejects an out-of-range page', (t) => {
-  t.exception(() => addon.render(textPdf(), 5, { scale: 1 }))
+  t.exception.all(() => addon.render(textPdf(), 5, { scale: 1 }))
 })
 
 test('extractText joins a word hyphenated across a line break by default', (t) => {
@@ -323,8 +323,8 @@ test('renderAsync matches render', async (t) => {
 
 test('async calls reject on an out-of-range page', async (t) => {
   const doc = addon.open(textPdf())
-  await t.exception(doc.extractTextAsync(5))
-  await t.exception(doc.renderAsync(5))
+  await t.exception.all(doc.extractTextAsync(5))
+  await t.exception.all(doc.renderAsync(5))
   doc.close()
 })
 
@@ -965,14 +965,14 @@ test('native errors carry a code', (t) => {
   )
   t.is(
     codeOf(() => doc.render(9)),
-    'PAGE'
+    'PAGE_RANGE'
   )
   t.is(
     codeOf(() => doc.extractText(9)),
-    'PAGE'
+    'PAGE_RANGE'
   )
   t.is(
-    codeOf(() => doc.render(0, { scale: 1000 })),
+    codeOf(() => doc.render(0, { scale: 100 })),
     'LIMIT'
   )
   doc.close()
@@ -988,7 +988,7 @@ test('native errors carry a code', (t) => {
 
 test('async errors carry a code', async (t) => {
   const doc = addon.open(textPdf())
-  t.is(await asyncCodeOf(doc.renderAsync(9)), 'PAGE')
+  t.is(await asyncCodeOf(doc.renderAsync(9)), 'PAGE_RANGE')
   t.is(await asyncCodeOf(doc.rotateAsync(90, { pages: [9] })), 'PAGE_RANGE')
   const pending = doc.extractTextAsync(0)
   doc.close()

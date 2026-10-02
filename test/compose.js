@@ -96,7 +96,7 @@ test('measureText scales with the font size', (t) => {
   )
   const { ascent, descent } = doc.fontMetrics(font, 10)
   t.ok(ascent > 5 && descent < 0)
-  t.exception.all(() => doc.measureText('x', 99, 10), /unknown font/)
+  t.exception.all(() => doc.measureText('x', 99, 10), /not loaded/)
   t.exception.all(() => doc.loadFont('Comic Sans'), /built-in font/)
   doc.close()
 })
