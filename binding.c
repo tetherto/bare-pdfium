@@ -110,7 +110,8 @@ typedef struct {
 
 static void
 bare_pdfium__close_fonts(bare_pdfium_doc_t *handle) {
-  for (size_t i = 0; i < handle->font_count; i++) FPDFFont_Close(handle->fonts[i]);
+  for (size_t i = 0; i < handle->font_count; i++)
+    FPDFFont_Close(handle->fonts[i]);
   free(handle->fonts);
   handle->fonts = NULL;
   handle->font_count = 0;
@@ -514,8 +515,8 @@ static js_value_t *
 bare_pdfium__text_result(js_env_t *env, const unsigned short *text, size_t units) {
   js_value_t *result;
   int err = units
-    ? js_create_string_utf16le(env, (const utf16_t *) text, units, &result)
-    : js_create_string_utf8(env, (const utf8_t *) "", 0, &result);
+              ? js_create_string_utf16le(env, (const utf16_t *) text, units, &result)
+              : js_create_string_utf8(env, (const utf8_t *) "", 0, &result);
   assert(err == 0);
   return result;
 }
@@ -853,8 +854,7 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
     FPDF_BITMAP bitmap = FPDFImageObj_GetRenderedBitmap(handle->doc, page, object);
     if (bitmap == NULL) continue;
 
-    if (FPDFBitmap_GetWidth(bitmap) < BARE_PDFIUM_MIN_IMAGE_PX ||
-        FPDFBitmap_GetHeight(bitmap) < BARE_PDFIUM_MIN_IMAGE_PX) {
+    if (FPDFBitmap_GetWidth(bitmap) < BARE_PDFIUM_MIN_IMAGE_PX || FPDFBitmap_GetHeight(bitmap) < BARE_PDFIUM_MIN_IMAGE_PX) {
       FPDFBitmap_Destroy(bitmap);
       continue;
     }
@@ -869,7 +869,8 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium__unlock();
 
   if (error) {
-    for (uint32_t i = 0; i < count; i++) free(images[i].rgba);
+    for (uint32_t i = 0; i < count; i++)
+      free(images[i].rgba);
     free(images);
     bare_pdfium__throw(env, error);
     return NULL;
@@ -959,8 +960,8 @@ bare_pdfium__settle_job(bare_pdfium_job_t *job, js_value_t *resolution) {
 
   if (!handle->exiting) {
     err = job->error
-      ? js_reject_deferred(env, job->deferred, bare_pdfium__error_value(env, job->error))
-      : js_resolve_deferred(env, job->deferred, resolution);
+            ? js_reject_deferred(env, job->deferred, bare_pdfium__error_value(env, job->error))
+            : js_resolve_deferred(env, job->deferred, resolution);
     assert(err == 0);
   }
 
@@ -980,8 +981,8 @@ bare_pdfium__text_work(uv_work_t *req) {
   bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
   bare_pdfium__lock();
   job->error = job->handle->doc
-    ? bare_pdfium__page_text(job->handle->doc, job->page_index, job->clip, &job->text, &job->units)
-    : BARE_PDFIUM_E_CLOSED;
+                 ? bare_pdfium__page_text(job->handle->doc, job->page_index, job->clip, &job->text, &job->units)
+                 : BARE_PDFIUM_E_CLOSED;
   bare_pdfium__unlock();
 }
 
@@ -1037,8 +1038,8 @@ bare_pdfium__render_work(uv_work_t *req) {
   bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
   bare_pdfium__lock();
   job->error = job->handle->doc
-    ? bare_pdfium__render_page(job->handle->doc, job->page_index, job->scale, &job->raster)
-    : BARE_PDFIUM_E_CLOSED;
+                 ? bare_pdfium__render_page(job->handle->doc, job->page_index, job->scale, &job->raster)
+                 : BARE_PDFIUM_E_CLOSED;
   bare_pdfium__unlock();
 }
 
@@ -1089,7 +1090,6 @@ bare_pdfium_render_async(js_env_t *env, js_callback_info_t *info) {
   return promise;
 }
 
-
 static int *
 bare_pdfium__copy_pages(js_env_t *env, js_value_t *value, size_t *len) {
   int err;
@@ -1116,14 +1116,16 @@ bare_pdfium__utf16(js_env_t *env, js_value_t *value) {
 
 static bool
 bare_pdfium__utf16_equal(const utf16_t *a, const utf16_t *b) {
-  while (*a && *a == *b) a++, b++;
+  while (*a && *a == *b)
+    a++, b++;
   return *a == *b;
 }
 
 static js_value_t *
 bare_pdfium__utf16_value(js_env_t *env, const utf16_t *str) {
   size_t len = 0;
-  while (str[len]) len++;
+  while (str[len])
+    len++;
   js_value_t *result;
   int err = js_create_string_utf16le(env, str, len, &result);
   assert(err == 0);
@@ -1173,7 +1175,8 @@ bare_pdfium__write_block(FPDF_FILEWRITE *self, const void *data, unsigned long s
   bare_pdfium_writer_t *writer = (bare_pdfium_writer_t *) self;
   if (writer->len + size > writer->cap) {
     size_t cap = writer->cap ? writer->cap : 65536;
-    while (cap < writer->len + size) cap *= 2;
+    while (cap < writer->len + size)
+      cap *= 2;
     uint8_t *grown = realloc(writer->data, cap);
     if (grown == NULL) return 0;
     writer->data = grown;
@@ -1204,8 +1207,8 @@ static const char *
 bare_pdfium__stamp(FPDF_DOCUMENT doc, FPDF_PAGE page, FPDF_FONT font, const utf16_t *text, double size, double angle, uint32_t color, bool under) {
   double base = size > 0 ? size : 100;
   FPDF_PAGEOBJECT object = font
-    ? FPDFPageObj_CreateTextObj(doc, font, (float) base)
-    : FPDFPageObj_NewTextObj(doc, "Helvetica-Bold", (float) base);
+                             ? FPDFPageObj_CreateTextObj(doc, font, (float) base)
+                             : FPDFPageObj_NewTextObj(doc, "Helvetica-Bold", (float) base);
   if (object == NULL) return BARE_PDFIUM_E_STAMP_CREATE;
 
   if (!FPDFText_SetText(object, (FPDF_WIDESTRING) text)) {
@@ -1425,7 +1428,8 @@ bare_pdfium__free_widgets(bare_pdfium_widget_t *widgets, size_t count) {
     free(widgets[i].name);
     free(widgets[i].value);
     free(widgets[i].export_value);
-    for (int j = 0; j < widgets[i].option_count; j++) free(widgets[i].options[j]);
+    for (int j = 0; j < widgets[i].option_count; j++)
+      free(widgets[i].options[j]);
     free(widgets[i].options);
     free(widgets[i].selected);
   }
@@ -1436,8 +1440,8 @@ static const char *
 bare_pdfium__form_widgets(FPDF_DOCUMENT doc, bare_pdfium_widget_t **widgets, size_t *count) {
   bare_pdfium_form_walk_t walk = {0};
   const char *error = FPDF_GetFormType(doc) == FORMTYPE_NONE
-    ? NULL
-    : bare_pdfium__walk_widgets(doc, &walk, bare_pdfium__collect_widget);
+                        ? NULL
+                        : bare_pdfium__walk_widgets(doc, &walk, bare_pdfium__collect_widget);
   if (error) {
     bare_pdfium__free_widgets(walk.widgets, walk.widget_count);
     return error;
@@ -1678,7 +1682,8 @@ bare_pdfium__free_entries(bare_pdfium_entry_t *entries, size_t count) {
   for (size_t i = 0; i < count; i++) {
     free(entries[i].name);
     free(entries[i].text);
-    for (uint32_t k = 0; k < entries[i].item_count; k++) free(entries[i].items[k]);
+    for (uint32_t k = 0; k < entries[i].item_count; k++)
+      free(entries[i].items[k]);
     free(entries[i].items);
   }
   free(entries);
@@ -1924,8 +1929,8 @@ bare_pdfium__edit_done(uv_work_t *req, int status) {
 
   if (!handle->exiting && !(source && source->exiting)) {
     err = job->error
-      ? js_reject_deferred(env, job->deferred, bare_pdfium__error_value(env, job->error))
-      : js_resolve_deferred(env, job->deferred, bare_pdfium__edit_result(env, job));
+            ? js_reject_deferred(env, job->deferred, bare_pdfium__error_value(env, job->error))
+            : js_resolve_deferred(env, job->deferred, bare_pdfium__edit_result(env, job));
     assert(err == 0);
   }
 
@@ -2284,8 +2289,8 @@ bare_pdfium_load_font(js_env_t *env, js_callback_info_t *info) {
 
   bare_pdfium__lock();
   FPDF_FONT font = is_bytes
-    ? FPDFText_LoadFont(handle->doc, data, (uint32_t) len, FPDF_FONT_TRUETYPE, true)
-    : FPDFText_LoadStandardFont(handle->doc, name);
+                     ? FPDFText_LoadFont(handle->doc, data, (uint32_t) len, FPDF_FONT_TRUETYPE, true)
+                     : FPDFText_LoadStandardFont(handle->doc, name);
   if (font) {
     FPDF_FONT *fonts = realloc(handle->fonts, (handle->font_count + 1) * sizeof(FPDF_FONT));
     if (fonts) {

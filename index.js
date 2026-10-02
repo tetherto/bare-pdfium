@@ -155,7 +155,7 @@ exports.mergeAsync = async function mergeAsync(pdfs) {
   }
 }
 
-exports.extractPagesAsync = async function extractPagesAsync(pdf, pages, opts = {}) {
+exports.extractPagesAsync = function extractPagesAsync(pdf, pages, opts = {}) {
   return editAsync(pdf, opts, async (doc) => {
     const part = exports.create()
     try {
@@ -167,18 +167,18 @@ exports.extractPagesAsync = async function extractPagesAsync(pdf, pages, opts = 
   })
 }
 
-exports.rotateAsync = async function rotateAsync(pdf, degrees, opts = {}) {
+exports.rotateAsync = function rotateAsync(pdf, degrees, opts = {}) {
   return editAsync(pdf, opts, async (doc) => {
     await doc.rotateAsync(degrees, opts)
     return doc.saveAsync()
   })
 }
 
-exports.decryptAsync = async function decryptAsync(pdf, password) {
+exports.decryptAsync = function decryptAsync(pdf, password) {
   return editAsync(pdf, { password }, (doc) => doc.saveAsync({ removeSecurity: true }))
 }
 
-exports.encryptAsync = async function encryptAsync(pdf, password, opts = {}) {
+exports.encryptAsync = function encryptAsync(pdf, password, opts = {}) {
   const { ownerPassword, permissions } = opts
   return editAsync(pdf, {}, (doc) =>
     doc.saveAsync({ encrypt: { password, ownerPassword, permissions } })
@@ -194,18 +194,18 @@ exports.composeAsync = async function composeAsync(content, opts = {}) {
   }
 }
 
-exports.watermarkAsync = async function watermarkAsync(pdf, text, opts = {}) {
+exports.watermarkAsync = function watermarkAsync(pdf, text, opts = {}) {
   return editAsync(pdf, opts, async (doc) => {
     await doc.watermarkAsync(text, opts)
     return doc.saveAsync()
   })
 }
 
-exports.fieldsAsync = async function fieldsAsync(pdf, opts = {}) {
+exports.fieldsAsync = function fieldsAsync(pdf, opts = {}) {
   return editAsync(pdf, opts, (doc) => doc.fieldsAsync())
 }
 
-exports.fillFieldsAsync = async function fillFieldsAsync(pdf, values, opts = {}) {
+exports.fillFieldsAsync = function fillFieldsAsync(pdf, values, opts = {}) {
   return editAsync(pdf, opts, async (doc) => {
     await doc.fillFieldsAsync(values)
     return doc.saveAsync()

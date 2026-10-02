@@ -143,8 +143,9 @@ function expand(source) {
     }
 
     const startxref = line.match(/^{{startxrefobj\s+(\d+)\s+(\d+)}}/)
-    if (startxref)
+    if (startxref) {
       line = line.replace(startxref[0], `startxref\n${objects.get(Number(startxref[1]))[0]}`)
+    }
 
     offset += line.length
     result += line

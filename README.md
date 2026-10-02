@@ -472,6 +472,12 @@ bare-make install    # writes prebuilds/<target>/
 npm test
 ```
 
+`npm test` reports coverage, and `npm run lint` runs Prettier and
+[`lunte`](https://github.com/holepunchto/lunte); format C with the repository's
+`.clang-format`. CI also builds a debug Linux addon and Bare with AddressSanitizer
+and runs the tests under LeakSanitizer, with `test/leaks.txt` suppressing leaks
+known in the JavaScript engine.
+
 `.github/actions/pdfium` runs these steps in CI. `test/render.js` compares renders
 against the expected PNGs from PDFium's own pixel tests, byte for byte.
 

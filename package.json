@@ -27,10 +27,13 @@
     "NOTICE.md"
   ],
   "addon": true,
+  "engines": {
+    "bare": ">=1.16.0"
+  },
   "scripts": {
-    "format": "prettier --write .",
-    "lint": "prettier --check .",
-    "test": "brittle-bare test.js test/compose.js test/render.js"
+    "format": "prettier --write . && lunte --fix",
+    "lint": "prettier --check . && lunte",
+    "test": "brittle-bare --coverage test.js test/compose.js test/render.js"
   },
   "repository": {
     "type": "git",
@@ -54,6 +57,7 @@
     "brittle": "^3.4.0",
     "cmake-bare": "^1.9.0",
     "cmake-gn": "^1.0.1",
+    "lunte": "^1.8.4",
     "prettier": "^3.3.3",
     "prettier-config-holepunch": "^2.0.0"
   }
