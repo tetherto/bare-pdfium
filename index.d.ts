@@ -27,6 +27,44 @@ export interface LoadError extends Error {
   code: LoadErrorCode
 }
 
+export interface PageOptions {
+  pages?: number[]
+}
+
+export interface ImportOptions extends PageOptions {
+  at?: number
+}
+
+export interface WatermarkOptions extends PageOptions {
+  size?: number
+  angle?: number
+  color?: [number, number, number]
+  opacity?: number
+  position?: 'over' | 'under'
+  font?: Uint8Array | null
+}
+
+export interface SaveOptions {
+  removeSecurity?: boolean
+}
+
+export type FieldType =
+  'text' | 'checkbox' | 'radio' | 'combobox' | 'listbox' | 'button' | 'signature' | 'unknown'
+
+export interface Field {
+  name: string
+  type: FieldType
+  value: string | boolean | string[] | null
+  page: number
+  readOnly: boolean
+  required: boolean
+  options?: string[]
+  editable?: boolean
+  multiSelect?: boolean
+}
+
+export type FieldValues = Record<string, string | number | boolean | string[]>
+
 export interface OpenOptions {
   /** password for an encrypted PDF */
   password?: string
@@ -49,8 +87,22 @@ export class Doc {
   /** every page's text, yielded one at a time so nothing accumulates */
   textPages(opts?: TextOptions): IterableIterator<{ page: number; text: string }>
   textPagesAsync(opts?: TextOptions): AsyncIterableIterator<{ page: number; text: string }>
+  importPages(source: Doc, opts?: ImportOptions): void
+  importPagesAsync(source: Doc, opts?: ImportOptions): Promise<void>
+  rotate(degrees: number, opts?: PageOptions): void
+  rotateAsync(degrees: number, opts?: PageOptions): Promise<void>
+  watermark(text: string, opts?: WatermarkOptions): void
+  watermarkAsync(text: string, opts?: WatermarkOptions): Promise<void>
+  fields(): Field[]
+  fieldsAsync(): Promise<Field[]>
+  fillFields(values: FieldValues): Field[]
+  fillFieldsAsync(values: FieldValues): Promise<Field[]>
+  save(opts?: SaveOptions): Uint8Array
+  saveAsync(opts?: SaveOptions): Promise<Uint8Array>
   close(): void
 }
+
+export function create(): Doc
 
 export function open(pdf: Uint8Array, opts?: OpenOptions): Doc
 
@@ -72,3 +124,55 @@ export function textPages(
   pdf: Uint8Array,
   opts?: OpenOptions & TextOptions
 ): IterableIterator<{ page: number; text: string }>
+
+export function merge(pdfs: Uint8Array[]): Uint8Array
+
+export function extractPages(pdf: Uint8Array, pages: number[], opts?: OpenOptions): Uint8Array
+
+export function rotate(
+  pdf: Uint8Array,
+  degrees: number,
+  opts?: OpenOptions & PageOptions
+): Uint8Array
+
+export function decrypt(pdf: Uint8Array, password: string): Uint8Array
+
+export function watermark(
+  pdf: Uint8Array,
+  text: string,
+  opts?: OpenOptions & WatermarkOptions
+): Uint8Array
+
+export function fields(pdf: Uint8Array, opts?: OpenOptions): Field[]
+
+export function fillFields(pdf: Uint8Array, values: FieldValues, opts?: OpenOptions): Uint8Array
+
+export function mergeAsync(pdfs: Uint8Array[]): Promise<Uint8Array>
+
+export function extractPagesAsync(
+  pdf: Uint8Array,
+  pages: number[],
+  opts?: OpenOptions
+): Promise<Uint8Array>
+
+export function rotateAsync(
+  pdf: Uint8Array,
+  degrees: number,
+  opts?: OpenOptions & PageOptions
+): Promise<Uint8Array>
+
+export function decryptAsync(pdf: Uint8Array, password: string): Promise<Uint8Array>
+
+export function watermarkAsync(
+  pdf: Uint8Array,
+  text: string,
+  opts?: OpenOptions & WatermarkOptions
+): Promise<Uint8Array>
+
+export function fieldsAsync(pdf: Uint8Array, opts?: OpenOptions): Promise<Field[]>
+
+export function fillFieldsAsync(
+  pdf: Uint8Array,
+  values: FieldValues,
+  opts?: OpenOptions
+): Promise<Uint8Array>

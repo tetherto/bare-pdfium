@@ -1,13 +1,14 @@
 # bare-pdfium
 
-PDF rasterization and inspection for [Bare](https://github.com/holepunchto/bare),
+PDF rasterization, inspection and editing for [Bare](https://github.com/holepunchto/bare),
 backed by [PDFium](https://pdfium.googlesource.com/pdfium/). Renders pages to RGBA
 pixel buffers with no canvas, no DOM, and no browser — so it runs anywhere Bare
 runs (desktop and mobile).
 
 The motivating use is feeding a PDF to a vision model: classify pages, rasterize
 the ones that carry a figure, encode them (e.g. via `bare-media`), and hand them
-to the model as images.
+to the model as images. It also merges, splits, rotates, watermarks, decrypts and
+fills in the form fields of an existing PDF, and saves the result.
 
 ## API
 
@@ -160,6 +161,107 @@ pdfium.render(bytes, 0, { scale: 2 })
 // open, stream every page's text, close when the iterator is done
 pdfium.textPages(bytes, { hyphens: 'join' })
 ```
+
+### Editing
+
+Edits change the open document in memory; `save()` returns the new PDF as a
+`Buffer`. The input is never modified.
+
+```js
+// an empty document to import pages into
+const out = pdfium.create()
+
+// copy pages from another open document, in the order given; `at` defaults to the end
+out.importPages(doc, { pages: [2, 0], at: 0 })
+
+// turn pages clockwise by a multiple of 90, added to their current rotation
+doc.rotate(90, { pages: [0] })
+
+// stamp text across the middle of each page
+doc.watermark('DRAFT', { angle: 45, opacity: 0.3, position: 'over' })
+
+// => [{ name, type, value, page, readOnly, required, options? }, ...]
+doc.fields()
+
+// set form fields by name, then read them back
+doc.fillFields({ name: 'Ada Lovelace', agree: true, color: 'blue', size: 'M' })
+
+// => Buffer; removeSecurity drops the encryption of a document opened with its password
+doc.save({ removeSecurity: false })
+```
+
+- `pages` — zero-based page indexes. Omitted, an edit applies to every page.
+  An index out of range throws a `RangeError` before anything changes.
+- `watermark(text, opts)`:
+
+  | option     | default           | effect                                                         |
+  | ---------- | ----------------- | -------------------------------------------------------------- |
+  | `pages`    | every page        | which pages to stamp                                           |
+  | `size`     | fit to the page   | font size in points; by default the text fills 80% of the page |
+  | `angle`    | `45`              | degrees counterclockwise, as the page is displayed             |
+  | `color`    | `[128, 128, 128]` | `[r, g, b]`, each 0-255                                        |
+  | `opacity`  | `0.3`             | 0 to 1                                                         |
+  | `position` | `'over'`          | `'over'` the content, or `'under'` it                          |
+  | `font`     | Helvetica Bold    | TrueType font bytes, needed for text outside Latin-1           |
+
+  `'under'` is hidden by any page that paints an opaque background, such as a
+  scan, so the default is `'over'` with some transparency. The page's content
+  stream is regenerated to add the stamp.
+
+- `fields()` — one entry per form field, merged across its widgets. `value` is
+  a string for text fields and dropdowns, a boolean for checkboxes, the chosen
+  option for a radio group (`null` when none is), and an array for a
+  multi-select list. Radio groups, dropdowns and lists carry their `options`.
+  A document with no form returns `[]`.
+- `fillFields(values)` — a text field takes a string (or a number), a checkbox
+  `true` or `false`, a radio group or dropdown one of its `options` (an editable
+  dropdown also takes free text), and a list box one option or an array of them.
+  An unknown name, a read-only field or a value outside the options throws
+  before anything changes, with a message naming what the field accepts. The
+  fields are filled through PDFium's form engine, so their appearance is
+  regenerated as a viewer would draw it, and each value is read back afterwards;
+  a field that did not take its value throws. Returns the filled fields.
+- `save()` keeps the document's encryption. To decrypt, open with the password
+  and save with `removeSecurity: true`. PDFium does not write encryption, so
+  there is no way to add a password.
+
+The one-shot forms open the input, apply one edit and return the saved PDF:
+
+```js
+pdfium.merge([a, b, c])
+pdfium.extractPages(bytes, [0, 1, 2])
+pdfium.rotate(bytes, 90, { pages: [0] })
+pdfium.decrypt(bytes, 'password')
+pdfium.watermark(bytes, 'CONFIDENTIAL', { opacity: 0.2 })
+pdfium.fields(bytes)
+pdfium.fillFields(bytes, { name: 'Ada Lovelace' })
+```
+
+Every one-shot but `merge` and `decrypt` takes `password` in its options for an
+encrypted input.
+
+Each edit also has an async form that runs on a libuv worker thread, the same way
+`renderAsync` does: `importPagesAsync`, `rotateAsync`, `watermarkAsync`,
+`fieldsAsync`, `fillFieldsAsync` and `saveAsync` on a document, and `mergeAsync`,
+`extractPagesAsync`, `rotateAsync`, `decryptAsync`, `watermarkAsync`,
+`fieldsAsync` and `fillFieldsAsync` as one-shots. They resolve to what the sync
+form returns.
+
+```js
+const doc = pdfium.open(bytes)
+doc.importPagesAsync(other, { pages: [0] })
+doc.rotateAsync(90, { pages: [0] })
+doc.watermarkAsync('DRAFT')
+const out = await doc.saveAsync()
+```
+
+Async calls run one at a time in the order they were made, so a chain like the
+one above needs no `await` between steps. Each call checks its arguments when
+its turn comes, against the document as the calls before it left it. A bad
+argument rejects the promise and never throws. A call still queued when its
+document, or the source of an import, is closed rejects with
+`document is closed`. The one-shots open their input on the calling thread and
+do the edit and the save on the worker.
 
 ### Types
 
