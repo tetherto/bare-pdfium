@@ -938,3 +938,97 @@ test('encrypt validates its options', (t) => {
   const blank = addon.encrypt(textPdf(), '', { ownerPassword: 'owner' })
   t.ok(pageTexts(blank)[0].includes('Hello PDF'), 'an empty user password opens without one')
 })
+
+function codeOf(fn) {
+  try {
+    fn()
+  } catch (err) {
+    return err.code
+  }
+  return null
+}
+
+async function asyncCodeOf(promise) {
+  try {
+    await promise
+  } catch (err) {
+    return err.code
+  }
+  return null
+}
+
+test('native errors carry a code', (t) => {
+  const doc = addon.open(textPdf())
+  t.is(
+    codeOf(() => doc.pageSize(9)),
+    'PAGE_RANGE'
+  )
+  t.is(
+    codeOf(() => doc.render(9)),
+    'PAGE'
+  )
+  t.is(
+    codeOf(() => doc.extractText(9)),
+    'PAGE'
+  )
+  t.is(
+    codeOf(() => doc.render(0, { scale: 1000 })),
+    'LIMIT'
+  )
+  doc.close()
+  t.is(
+    codeOf(() => addon.openFile(`${os.tmpdir()}/bare-pdfium-missing.pdf`)),
+    'FILE'
+  )
+  t.is(
+    codeOf(() => addon.open(Buffer.from('nope'))),
+    'FORMAT'
+  )
+})
+
+test('async errors carry a code', async (t) => {
+  const doc = addon.open(textPdf())
+  t.is(await asyncCodeOf(doc.renderAsync(9)), 'PAGE')
+  t.is(await asyncCodeOf(doc.rotateAsync(90, { pages: [9] })), 'PAGE_RANGE')
+  const pending = doc.extractTextAsync(0)
+  doc.close()
+  t.is(await asyncCodeOf(pending), 'CLOSED')
+  t.is(await asyncCodeOf(doc.saveAsync()), 'CLOSED')
+})
+
+test('argument and form errors carry a code', (t) => {
+  t.is(
+    codeOf(() => addon.rotate(textPdf(), 45)),
+    'INVALID_ARGUMENT'
+  )
+  t.is(
+    codeOf(() => addon.extractPages(textPdf(), [5])),
+    'PAGE_RANGE'
+  )
+  t.is(
+    codeOf(() => addon.watermark(textPdf(), '草稿')),
+    'UNSUPPORTED_TEXT'
+  )
+  t.is(
+    codeOf(() => addon.fillFields(formPdf(), { nope: 'x' })),
+    'FIELD_NOT_FOUND'
+  )
+  t.is(
+    codeOf(() => addon.fillFields(formPdf(), { id: 'x' })),
+    'FIELD_READ_ONLY'
+  )
+  t.is(
+    codeOf(() => addon.fillFields(textPdf(), { name: 'x' })),
+    'NO_FORM'
+  )
+  t.is(
+    codeOf(() => addon.encrypt(textPdf(), 42)),
+    'INVALID_ARGUMENT'
+  )
+  const closed = addon.open(textPdf())
+  closed.close()
+  t.is(
+    codeOf(() => closed.save()),
+    'CLOSED'
+  )
+})

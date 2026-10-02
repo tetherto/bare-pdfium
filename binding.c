@@ -34,6 +34,65 @@ static const double BARE_PDFIUM_MIN_IMAGE_FRACTION = 0.05;
 // An extracted image below this pixel size is a spacer/bullet, not a figure.
 static const int BARE_PDFIUM_MIN_IMAGE_PX = 8;
 
+#define BARE_PDFIUM_ERRORS(V) \
+  V(CLOSED, "CLOSED", "document is closed") \
+  V(PAGE_RANGE, "PAGE_RANGE", "page index out of range") \
+  V(PAGE, "PAGE", "failed to load page") \
+  V(TEXT_PAGE, "PAGE", "failed to load text page") \
+  V(LIMIT, "LIMIT", "rendered dimensions exceed limit") \
+  V(MEMORY, "MEMORY", "failed to allocate bitmap") \
+  V(FILE_OPEN, "FILE", "failed to open file") \
+  V(FILE_SIZE, "FILE", "failed to size file") \
+  V(CREATE, "EDIT", "failed to create document") \
+  V(IMPORT, "IMPORT", "failed to import pages") \
+  V(SAVE, "SAVE", "failed to save document") \
+  V(CONTENT, "EDIT", "failed to write page content") \
+  V(STAMP_CREATE, "EDIT", "failed to create watermark text") \
+  V(STAMP_SET, "EDIT", "failed to set watermark text") \
+  V(STAMP_MEASURE, "EDIT", "failed to measure watermark text") \
+  V(STAMP_BOX, "EDIT", "failed to read page box") \
+  V(STAMP_INSERT, "EDIT", "failed to insert watermark") \
+  V(FORM, "FORM", "failed to load the form") \
+  V(FONT_LOAD, "FONT", "failed to load font") \
+  V(FONT_UNKNOWN, "FONT", "unknown font") \
+  V(ADD_PAGE, "EDIT", "failed to add page") \
+  V(DRAW_TEXT, "EDIT", "failed to create text") \
+  V(DRAW_RECT, "EDIT", "failed to create rectangle") \
+  V(DRAW_LINE, "EDIT", "failed to create line") \
+  V(IMAGE, "IMAGE", "failed to load image")
+
+#define V(name, code, message) static const char BARE_PDFIUM_E_##name[] = message;
+BARE_PDFIUM_ERRORS(V)
+#undef V
+
+static const char *
+bare_pdfium__error_code(const char *error) {
+#define V(name, code, message) \
+  if (error == BARE_PDFIUM_E_##name) return code;
+  BARE_PDFIUM_ERRORS(V)
+#undef V
+  return "PDFIUM";
+}
+
+static void
+bare_pdfium__throw(js_env_t *env, const char *error) {
+  int err = js_throw_error(env, bare_pdfium__error_code(error), error);
+  assert(err == 0);
+}
+
+static js_value_t *
+bare_pdfium__error_value(js_env_t *env, const char *error) {
+  int err;
+  js_value_t *code, *message, *result;
+  err = js_create_string_utf8(env, (const utf8_t *) bare_pdfium__error_code(error), -1, &code);
+  assert(err == 0);
+  err = js_create_string_utf8(env, (const utf8_t *) error, -1, &message);
+  assert(err == 0);
+  err = js_create_error(env, code, message, &result);
+  assert(err == 0);
+  return result;
+}
+
 // An open document plus its own copy of the source bytes. FPDF_LoadMemDocument
 // does not copy the buffer, so the document owns one and frees it on close.
 typedef struct {
@@ -43,6 +102,10 @@ typedef struct {
   FPDF_FILEACCESS access;
   FPDF_FONT *fonts;
   size_t font_count;
+  js_env_t *env;
+  js_deferred_teardown_t *teardown;
+  uint32_t pending;
+  bool exiting;
 } bare_pdfium_doc_t;
 
 static void
@@ -99,16 +162,123 @@ bare_pdfium__ensure_init(void) {
   bare_pdfium_initialized = true;
 }
 
+static bool
+bare_pdfium__trylock(void) {
+  uv_once(&bare_pdfium_lock_once, bare_pdfium__init_lock);
+  return uv_mutex_trylock(&bare_pdfium_lock_mutex) == 0;
+}
+
+static void
+bare_pdfium__release(bare_pdfium_doc_t *handle) {
+  bare_pdfium__close_fonts(handle);
+  if (handle->doc) {
+    FPDF_CloseDocument(handle->doc);
+    handle->doc = NULL;
+  }
+}
+
+static void
+bare_pdfium__release_files(bare_pdfium_doc_t *handle) {
+  if (handle->file) {
+    fclose(handle->file);
+    handle->file = NULL;
+  }
+  free(handle->buf);
+  handle->buf = NULL;
+}
+
+static void
+bare_pdfium__settle_teardown(bare_pdfium_doc_t *handle) {
+  if (handle->teardown == NULL || handle->pending > 0) return;
+  if (handle->doc && !handle->exiting) return;
+
+  if (handle->exiting) {
+    bare_pdfium__lock();
+    bare_pdfium__release(handle);
+    bare_pdfium__unlock();
+    bare_pdfium__release_files(handle);
+  }
+
+  js_deferred_teardown_t *teardown = handle->teardown;
+  handle->teardown = NULL;
+  int err = js_finish_deferred_teardown_callback(teardown);
+  assert(err == 0);
+}
+
+static void
+bare_pdfium__on_teardown(js_deferred_teardown_t *teardown, void *data) {
+  bare_pdfium_doc_t *handle = (bare_pdfium_doc_t *) data;
+  handle->exiting = true;
+  bare_pdfium__settle_teardown(handle);
+}
+
+typedef struct {
+  uv_work_t req;
+  bare_pdfium_doc_t *handle;
+} bare_pdfium_release_t;
+
+static void
+bare_pdfium__release_work(uv_work_t *req) {
+  bare_pdfium_release_t *release = (bare_pdfium_release_t *) req->data;
+  bare_pdfium__lock();
+  bare_pdfium__release(release->handle);
+  bare_pdfium__unlock();
+}
+
+static void
+bare_pdfium__release_done(uv_work_t *req, int status) {
+  bare_pdfium_release_t *release = (bare_pdfium_release_t *) req->data;
+  bare_pdfium__release_files(release->handle);
+  free(release->handle);
+  free(release);
+}
+
 static void
 bare_pdfium__on_doc_finalize(js_env_t *env, void *data, void *finalize_hint) {
+  int err;
   bare_pdfium_doc_t *handle = (bare_pdfium_doc_t *) data;
-  bare_pdfium__lock();
-  bare_pdfium__close_fonts(handle);
-  if (handle->doc) FPDF_CloseDocument(handle->doc);
-  bare_pdfium__unlock();
-  if (handle->file) fclose(handle->file);
-  free(handle->buf);
-  free(handle);
+
+  if (handle->teardown) {
+    err = js_finish_deferred_teardown_callback(handle->teardown);
+    assert(err == 0);
+    handle->teardown = NULL;
+  }
+
+  if (handle->doc == NULL && handle->font_count == 0) {
+    bare_pdfium__release_files(handle);
+    free(handle);
+    return;
+  }
+
+  if (bare_pdfium__trylock()) {
+    bare_pdfium__release(handle);
+    bare_pdfium__unlock();
+    bare_pdfium__release_files(handle);
+    free(handle);
+    return;
+  }
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  bare_pdfium_release_t *release = malloc(sizeof(bare_pdfium_release_t));
+  release->req.data = release;
+  release->handle = handle;
+  err = uv_queue_work(loop, &release->req, bare_pdfium__release_work, bare_pdfium__release_done);
+  assert(err == 0);
+}
+
+static js_value_t *
+bare_pdfium__wrap_doc(js_env_t *env, bare_pdfium_doc_t *handle) {
+  int err;
+  handle->env = env;
+  err = js_add_deferred_teardown_callback(env, bare_pdfium__on_teardown, handle, &handle->teardown);
+  assert(err == 0);
+  js_value_t *external;
+  err = js_create_external(env, handle, bare_pdfium__on_doc_finalize, NULL, &external);
+  assert(err == 0);
+  return external;
 }
 
 static int64_t
@@ -269,7 +439,7 @@ bare_pdfium__throw_load_error(js_env_t *env, unsigned long code) {
 static const char *
 bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_pdfium_raster_t *result) {
   FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
-  if (page == NULL) return "failed to load page";
+  if (page == NULL) return BARE_PDFIUM_E_PAGE;
 
   // PDF user-space units are points (1/72"); scale maps them to device pixels.
   int width = (int) lround(FPDF_GetPageWidth(page) * scale);
@@ -279,13 +449,13 @@ bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_p
 
   if (width > BARE_PDFIUM_MAX_DIM || height > BARE_PDFIUM_MAX_DIM) {
     FPDF_ClosePage(page);
-    return "rendered dimensions exceed limit";
+    return BARE_PDFIUM_E_LIMIT;
   }
 
   FPDF_BITMAP bitmap = FPDFBitmap_Create(width, height, 1);
   if (bitmap == NULL) {
     FPDF_ClosePage(page);
-    return "failed to allocate bitmap";
+    return BARE_PDFIUM_E_MEMORY;
   }
 
   // Paint white first: a page with no background renders onto transparency,
@@ -297,18 +467,18 @@ bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_p
 
   bool copied = bare_pdfium__raster(bitmap, result);
   FPDFBitmap_Destroy(bitmap);
-  return copied ? NULL : "failed to allocate bitmap";
+  return copied ? NULL : BARE_PDFIUM_E_MEMORY;
 }
 
 static const char *
 bare_pdfium__page_text(FPDF_DOCUMENT doc, int page_index, bool clip, unsigned short **text, size_t *units) {
   FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
-  if (page == NULL) return "failed to load page";
+  if (page == NULL) return BARE_PDFIUM_E_PAGE;
 
   FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
   if (text_page == NULL) {
     FPDF_ClosePage(page);
-    return "failed to load text page";
+    return BARE_PDFIUM_E_TEXT_PAGE;
   }
 
   *text = NULL;
@@ -397,11 +567,7 @@ bare_pdfium_open(js_env_t *env, js_callback_info_t *info) {
   handle->buf = copy;
   handle->file = NULL;
 
-  js_value_t *external;
-  err = js_create_external(env, handle, bare_pdfium__on_doc_finalize, NULL, &external);
-  assert(err == 0);
-
-  return external;
+  return bare_pdfium__wrap_doc(env, handle);
 }
 
 static js_value_t *
@@ -435,16 +601,14 @@ bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
   FILE *file = fopen(path, "rb");
   free(path);
   if (file == NULL) {
-    err = js_throw_error(env, "FILE", "failed to open file");
-    assert(err == 0);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_FILE_OPEN);
     return NULL;
   }
 
   int64_t size = bare_pdfium__file_size(file);
   if (size < 0) {
     fclose(file);
-    err = js_throw_error(env, "FILE", "failed to size file");
-    assert(err == 0);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_FILE_SIZE);
     return NULL;
   }
 
@@ -469,11 +633,7 @@ bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
-  js_value_t *external;
-  err = js_create_external(env, handle, bare_pdfium__on_doc_finalize, NULL, &external);
-  assert(err == 0);
-
-  return external;
+  return bare_pdfium__wrap_doc(env, handle);
 }
 
 static js_value_t *
@@ -487,20 +647,12 @@ bare_pdfium_close(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
-  // idempotent: the finalizer frees the struct, so null the fields it would touch
+
   bare_pdfium__lock();
-  bare_pdfium__close_fonts(handle);
-  if (handle->doc) {
-    FPDF_CloseDocument(handle->doc);
-    handle->doc = NULL;
-  }
+  bare_pdfium__release(handle);
   bare_pdfium__unlock();
-  if (handle->file) {
-    fclose(handle->file);
-    handle->file = NULL;
-  }
-  free(handle->buf);
-  handle->buf = NULL;
+  bare_pdfium__release_files(handle);
+  bare_pdfium__settle_teardown(handle);
 
   return NULL;
 }
@@ -549,8 +701,7 @@ bare_pdfium_page_size(js_env_t *env, js_callback_info_t *info) {
   bool found = FPDF_GetPageSizeByIndexF(handle->doc, (int) page_index, &size);
   bare_pdfium__unlock();
   if (!found) {
-    err = js_throw_error(env, NULL, "page index out of range");
-    assert(err == 0);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE_RANGE);
     return NULL;
   }
 
@@ -594,8 +745,7 @@ bare_pdfium_page_flags(js_env_t *env, js_callback_info_t *info) {
   FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
   if (page == NULL) {
     bare_pdfium__unlock();
-    err = js_throw_error(env, NULL, "failed to load page");
-    assert(err == 0);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE);
     return NULL;
   }
 
@@ -660,8 +810,7 @@ bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium__unlock();
 
   if (error) {
-    err = js_throw_error(env, NULL, error);
-    assert(err == 0);
+    bare_pdfium__throw(env, error);
     return NULL;
   }
 
@@ -689,14 +838,13 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
   if (page == NULL) {
     bare_pdfium__unlock();
-    err = js_throw_error(env, NULL, "failed to load page");
-    assert(err == 0);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE);
     return NULL;
   }
 
   int objects = FPDFPage_CountObjects(page);
   bare_pdfium_raster_t *images = objects > 0 ? malloc(sizeof(bare_pdfium_raster_t) * (size_t) objects) : NULL;
-  const char *error = objects > 0 && images == NULL ? "failed to allocate bitmap" : NULL;
+  const char *error = objects > 0 && images == NULL ? BARE_PDFIUM_E_MEMORY : NULL;
   uint32_t count = 0;
   for (int i = 0; error == NULL && i < objects; i++) {
     FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, i);
@@ -712,7 +860,7 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
     }
 
     if (bare_pdfium__raster(bitmap, &images[count])) count++;
-    else error = "failed to allocate bitmap";
+    else error = BARE_PDFIUM_E_MEMORY;
     FPDFBitmap_Destroy(bitmap);
   }
 
@@ -723,8 +871,7 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   if (error) {
     for (uint32_t i = 0; i < count; i++) free(images[i].rgba);
     free(images);
-    err = js_throw_error(env, NULL, error);
-    assert(err == 0);
+    bare_pdfium__throw(env, error);
     return NULL;
   }
 
@@ -771,8 +918,7 @@ bare_pdfium_extract_text(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium__unlock();
 
   if (error) {
-    err = js_throw_error(env, NULL, error);
-    assert(err == 0);
+    bare_pdfium__throw(env, error);
     return NULL;
   }
 
@@ -794,6 +940,7 @@ bare_pdfium__queue_job(js_env_t *env, js_value_t *external, int64_t page_index, 
 
   err = js_create_reference(env, external, 1, &job->ref);
   assert(err == 0);
+  job->handle->pending++;
 
   js_value_t *promise;
   err = js_create_promise(env, &job->deferred, &promise);
@@ -808,22 +955,20 @@ bare_pdfium__settle_job(bare_pdfium_job_t *job, js_value_t *resolution) {
   int err;
   js_env_t *env = job->env;
 
-  if (job->error) {
-    js_value_t *message;
-    err = js_create_string_utf8(env, (const utf8_t *) job->error, -1, &message);
-    assert(err == 0);
-    js_value_t *error;
-    err = js_create_error(env, NULL, message, &error);
-    assert(err == 0);
-    err = js_reject_deferred(env, job->deferred, error);
-    assert(err == 0);
-  } else {
-    err = js_resolve_deferred(env, job->deferred, resolution);
+  bare_pdfium_doc_t *handle = job->handle;
+
+  if (!handle->exiting) {
+    err = job->error
+      ? js_reject_deferred(env, job->deferred, bare_pdfium__error_value(env, job->error))
+      : js_resolve_deferred(env, job->deferred, resolution);
     assert(err == 0);
   }
 
   err = js_delete_reference(env, job->ref);
   assert(err == 0);
+
+  handle->pending--;
+  bare_pdfium__settle_teardown(handle);
 
   free(job->text);
   free(job->raster.rgba);
@@ -836,7 +981,7 @@ bare_pdfium__text_work(uv_work_t *req) {
   bare_pdfium__lock();
   job->error = job->handle->doc
     ? bare_pdfium__page_text(job->handle->doc, job->page_index, job->clip, &job->text, &job->units)
-    : "document is closed";
+    : BARE_PDFIUM_E_CLOSED;
   bare_pdfium__unlock();
 }
 
@@ -850,7 +995,7 @@ bare_pdfium__text_done(uv_work_t *req, int status) {
   err = js_open_handle_scope(env, &scope);
   assert(err == 0);
 
-  js_value_t *result = job->error ? NULL : bare_pdfium__text_result(env, job->text, job->units);
+  js_value_t *result = job->error || job->handle->exiting ? NULL : bare_pdfium__text_result(env, job->text, job->units);
   bare_pdfium__settle_job(job, result);
 
   err = js_close_handle_scope(env, scope);
@@ -893,7 +1038,7 @@ bare_pdfium__render_work(uv_work_t *req) {
   bare_pdfium__lock();
   job->error = job->handle->doc
     ? bare_pdfium__render_page(job->handle->doc, job->page_index, job->scale, &job->raster)
-    : "document is closed";
+    : BARE_PDFIUM_E_CLOSED;
   bare_pdfium__unlock();
 }
 
@@ -907,7 +1052,7 @@ bare_pdfium__render_done(uv_work_t *req, int status) {
   err = js_open_handle_scope(env, &scope);
   assert(err == 0);
 
-  js_value_t *result = job->error ? NULL : bare_pdfium__raster_result(env, &job->raster);
+  js_value_t *result = job->error || job->handle->exiting ? NULL : bare_pdfium__raster_result(env, &job->raster);
   bare_pdfium__settle_job(job, result);
 
   err = js_close_handle_scope(env, scope);
@@ -944,11 +1089,6 @@ bare_pdfium_render_async(js_env_t *env, js_callback_info_t *info) {
   return promise;
 }
 
-static void
-bare_pdfium__throw(js_env_t *env, const char *message) {
-  int err = js_throw_error(env, NULL, message);
-  assert(err == 0);
-}
 
 static int *
 bare_pdfium__copy_pages(js_env_t *env, js_value_t *value, size_t *len) {
@@ -1000,25 +1140,21 @@ bare_pdfium_create(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium__unlock();
 
   if (doc == NULL) {
-    bare_pdfium__throw(env, "failed to create document");
+    bare_pdfium__throw(env, BARE_PDFIUM_E_CREATE);
     return NULL;
   }
 
   bare_pdfium_doc_t *handle = calloc(1, sizeof(bare_pdfium_doc_t));
   handle->doc = doc;
 
-  js_value_t *external;
-  err = js_create_external(env, handle, bare_pdfium__on_doc_finalize, NULL, &external);
-  assert(err == 0);
-
-  return external;
+  return bare_pdfium__wrap_doc(env, handle);
 }
 
 static const char *
 bare_pdfium__rotate_pages(FPDF_DOCUMENT doc, const int *pages, size_t len, int turns) {
   for (size_t i = 0; i < len; i++) {
     FPDF_PAGE page = FPDF_LoadPage(doc, pages[i]);
-    if (page == NULL) return "failed to load page";
+    if (page == NULL) return BARE_PDFIUM_E_PAGE;
     FPDFPage_SetRotation(page, ((FPDFPage_GetRotation(page) + turns) % 4 + 4) % 4);
     FPDF_ClosePage(page);
   }
@@ -1056,7 +1192,7 @@ bare_pdfium__save_document(FPDF_DOCUMENT doc, bool remove_security, uint8_t **da
 
   if (!FPDF_SaveAsCopy(doc, &writer.base, remove_security ? FPDF_REMOVE_SECURITY : FPDF_NO_INCREMENTAL)) {
     free(writer.data);
-    return "failed to save document";
+    return BARE_PDFIUM_E_SAVE;
   }
 
   *data = writer.data;
@@ -1070,11 +1206,11 @@ bare_pdfium__stamp(FPDF_DOCUMENT doc, FPDF_PAGE page, FPDF_FONT font, const utf1
   FPDF_PAGEOBJECT object = font
     ? FPDFPageObj_CreateTextObj(doc, font, (float) base)
     : FPDFPageObj_NewTextObj(doc, "Helvetica-Bold", (float) base);
-  if (object == NULL) return "failed to create watermark text";
+  if (object == NULL) return BARE_PDFIUM_E_STAMP_CREATE;
 
   if (!FPDFText_SetText(object, (FPDF_WIDESTRING) text)) {
     FPDFPageObj_Destroy(object);
-    return "failed to set watermark text";
+    return BARE_PDFIUM_E_STAMP_SET;
   }
 
   FPDFPageObj_SetFillColor(object, (color >> 24) & 0xff, (color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff);
@@ -1082,13 +1218,13 @@ bare_pdfium__stamp(FPDF_DOCUMENT doc, FPDF_PAGE page, FPDF_FONT font, const utf1
   float left, bottom, right, top;
   if (!FPDFPageObj_GetBounds(object, &left, &bottom, &right, &top)) {
     FPDFPageObj_Destroy(object);
-    return "failed to measure watermark text";
+    return BARE_PDFIUM_E_STAMP_MEASURE;
   }
 
   FS_RECTF box;
   if (!FPDF_GetPageBoundingBox(page, &box)) {
     FPDFPageObj_Destroy(object);
-    return "failed to read page box";
+    return BARE_PDFIUM_E_STAMP_BOX;
   }
 
   double radians = (angle + 90.0 * FPDFPage_GetRotation(page)) * 3.14159265358979323846 / 180.0;
@@ -1113,10 +1249,10 @@ bare_pdfium__stamp(FPDF_DOCUMENT doc, FPDF_PAGE page, FPDF_FONT font, const utf1
   bool inserted = under ? FPDFPage_InsertObjectAtIndex(page, object, 0) : (FPDFPage_InsertObject(page, object), true);
   if (!inserted) {
     FPDFPageObj_Destroy(object);
-    return "failed to insert watermark";
+    return BARE_PDFIUM_E_STAMP_INSERT;
   }
 
-  return FPDFPage_GenerateContent(page) ? NULL : "failed to write page content";
+  return FPDFPage_GenerateContent(page) ? NULL : BARE_PDFIUM_E_CONTENT;
 }
 
 static const char *
@@ -1124,14 +1260,14 @@ bare_pdfium__watermark_pages(FPDF_DOCUMENT doc, const int *pages, size_t len, co
   FPDF_FONT font = NULL;
   if (font_data) {
     font = FPDFText_LoadFont(doc, font_data, (uint32_t) font_len, FPDF_FONT_TRUETYPE, true);
-    if (font == NULL) return "failed to load font";
+    if (font == NULL) return BARE_PDFIUM_E_FONT_LOAD;
   }
 
   const char *error = NULL;
   for (size_t i = 0; i < len && error == NULL; i++) {
     FPDF_PAGE page = FPDF_LoadPage(doc, pages[i]);
     if (page == NULL) {
-      error = "failed to load page";
+      error = BARE_PDFIUM_E_PAGE;
       break;
     }
     error = bare_pdfium__stamp(doc, page, font, text, size, angle, color, under);
@@ -1211,7 +1347,7 @@ bare_pdfium__walk_widgets(FPDF_DOCUMENT doc, bare_pdfium_form_walk_t *walk, bare
   info.version = 1;
 
   walk->form = FPDFDOC_InitFormFillEnvironment(doc, &info);
-  if (walk->form == NULL) return "failed to load the form";
+  if (walk->form == NULL) return BARE_PDFIUM_E_FORM;
 
   const char *error = NULL;
   int count = FPDF_GetPageCount(doc);
@@ -1219,7 +1355,7 @@ bare_pdfium__walk_widgets(FPDF_DOCUMENT doc, bare_pdfium_form_walk_t *walk, bare
   for (int i = 0; i < count && error == NULL; i++) {
     FPDF_PAGE page = FPDF_LoadPage(doc, i);
     if (page == NULL) {
-      error = "failed to load page";
+      error = BARE_PDFIUM_E_PAGE;
       break;
     }
     FORM_OnAfterLoadPage(page, walk->form);
@@ -1622,7 +1758,7 @@ static const char *
 bare_pdfium__import_work(bare_pdfium_edit_job_t *job) {
   int at = job->number < 0 ? FPDF_GetPageCount(job->handle->doc) : job->number;
   bool ok = FPDF_ImportPagesByIndex(job->handle->doc, job->source->doc, job->pages, (unsigned long) job->pages_len, at);
-  return ok ? NULL : "failed to import pages";
+  return ok ? NULL : BARE_PDFIUM_E_IMPORT;
 }
 
 static void
@@ -1725,7 +1861,7 @@ static void
 bare_pdfium__run_edit(bare_pdfium_edit_job_t *job) {
   bare_pdfium__lock();
   if (job->handle->doc == NULL || (job->source && job->source->doc == NULL)) {
-    job->error = "document is closed";
+    job->error = BARE_PDFIUM_E_CLOSED;
   } else {
     job->error = job->work(job);
   }
@@ -1783,17 +1919,13 @@ bare_pdfium__edit_done(uv_work_t *req, int status) {
   err = js_open_handle_scope(env, &scope);
   assert(err == 0);
 
-  if (job->error) {
-    js_value_t *message;
-    err = js_create_string_utf8(env, (const utf8_t *) job->error, -1, &message);
-    assert(err == 0);
-    js_value_t *error;
-    err = js_create_error(env, NULL, message, &error);
-    assert(err == 0);
-    err = js_reject_deferred(env, job->deferred, error);
-    assert(err == 0);
-  } else {
-    err = js_resolve_deferred(env, job->deferred, bare_pdfium__edit_result(env, job));
+  bare_pdfium_doc_t *handle = job->handle;
+  bare_pdfium_doc_t *source = job->source_ref ? job->source : NULL;
+
+  if (!handle->exiting && !(source && source->exiting)) {
+    err = job->error
+      ? js_reject_deferred(env, job->deferred, bare_pdfium__error_value(env, job->error))
+      : js_resolve_deferred(env, job->deferred, bare_pdfium__edit_result(env, job));
     assert(err == 0);
   }
 
@@ -1805,6 +1937,13 @@ bare_pdfium__edit_done(uv_work_t *req, int status) {
   }
 
   bare_pdfium__free_edit(job);
+
+  handle->pending--;
+  bare_pdfium__settle_teardown(handle);
+  if (source) {
+    source->pending--;
+    bare_pdfium__settle_teardown(source);
+  }
 
   err = js_close_handle_scope(env, scope);
   assert(err == 0);
@@ -1841,9 +1980,11 @@ bare_pdfium__edit(js_env_t *env, js_callback_info_t *info, bare_pdfium_edit_setu
 
   err = js_create_reference(env, argv[0], 1, &job->ref);
   assert(err == 0);
+  job->handle->pending++;
   if (job->source_value) {
     err = js_create_reference(env, job->source_value, 1, &job->source_ref);
     assert(err == 0);
+    job->source->pending++;
   }
 
   js_value_t *promise;
@@ -1958,7 +2099,7 @@ static const char *
 bare_pdfium__draw_work(bare_pdfium_edit_job_t *job) {
   bare_pdfium_doc_t *handle = job->handle;
   FPDF_PAGE page = FPDF_LoadPage(handle->doc, job->number);
-  if (page == NULL) return "failed to load page";
+  if (page == NULL) return BARE_PDFIUM_E_PAGE;
 
   const char *error = NULL;
   for (size_t i = 0; i < job->item_count && error == NULL; i++) {
@@ -1968,14 +2109,14 @@ bare_pdfium__draw_work(bare_pdfium_edit_job_t *job) {
     switch (item->kind) {
     case BARE_PDFIUM_DRAW_TEXT:
       if (item->font < 0 || (size_t) item->font >= handle->font_count) {
-        error = "unknown font";
+        error = BARE_PDFIUM_E_FONT_UNKNOWN;
         break;
       }
       object = FPDFPageObj_CreateTextObj(handle->doc, handle->fonts[item->font], (float) item->size);
       if (object == NULL || !FPDFText_SetText(object, (FPDF_WIDESTRING) item->text)) {
         if (object) FPDFPageObj_Destroy(object);
         object = NULL;
-        error = "failed to create text";
+        error = BARE_PDFIUM_E_DRAW_TEXT;
         break;
       }
       bare_pdfium__set_colors(object, item->fill, 0, 0);
@@ -1984,7 +2125,7 @@ bare_pdfium__draw_work(bare_pdfium_edit_job_t *job) {
     case BARE_PDFIUM_DRAW_RECT:
       object = FPDFPageObj_CreateNewRect((float) item->x, (float) item->y, (float) item->width, (float) item->height);
       if (object == NULL) {
-        error = "failed to create rectangle";
+        error = BARE_PDFIUM_E_DRAW_RECT;
         break;
       }
       bare_pdfium__set_colors(object, item->fill, item->stroke, item->line_width);
@@ -1995,7 +2136,7 @@ bare_pdfium__draw_work(bare_pdfium_edit_job_t *job) {
       if (object == NULL || !FPDFPath_LineTo(object, (float) item->x2, (float) item->y2)) {
         if (object) FPDFPageObj_Destroy(object);
         object = NULL;
-        error = "failed to create line";
+        error = BARE_PDFIUM_E_DRAW_LINE;
         break;
       }
       bare_pdfium__set_colors(object, 0, item->stroke, item->line_width);
@@ -2003,14 +2144,14 @@ bare_pdfium__draw_work(bare_pdfium_edit_job_t *job) {
       break;
     case BARE_PDFIUM_DRAW_IMAGE:
       object = bare_pdfium__draw_image(handle->doc, page, item);
-      if (object == NULL) error = "failed to load image";
+      if (object == NULL) error = BARE_PDFIUM_E_IMAGE;
       break;
     }
 
     if (object) FPDFPage_InsertObject(page, object);
   }
 
-  if (error == NULL && !FPDFPage_GenerateContent(page)) error = "failed to write page content";
+  if (error == NULL && !FPDFPage_GenerateContent(page)) error = BARE_PDFIUM_E_CONTENT;
   FPDF_ClosePage(page);
   return error;
 }
@@ -2106,7 +2247,7 @@ bare_pdfium_new_page(js_env_t *env, js_callback_info_t *info) {
   if (page) FPDF_ClosePage(page);
   bare_pdfium__unlock();
 
-  if (page == NULL) bare_pdfium__throw(env, "failed to add page");
+  if (page == NULL) bare_pdfium__throw(env, BARE_PDFIUM_E_ADD_PAGE);
 
   return NULL;
 }
@@ -2160,7 +2301,7 @@ bare_pdfium_load_font(js_env_t *env, js_callback_info_t *info) {
   free(data);
 
   if (index < 0) {
-    bare_pdfium__throw(env, "failed to load font");
+    bare_pdfium__throw(env, BARE_PDFIUM_E_FONT_LOAD);
     return NULL;
   }
 
@@ -2210,7 +2351,7 @@ bare_pdfium_measure(js_env_t *env, js_callback_info_t *info) {
   free(text);
 
   if (!known) {
-    bare_pdfium__throw(env, "unknown font");
+    bare_pdfium__throw(env, BARE_PDFIUM_E_FONT_UNKNOWN);
     return NULL;
   }
 
@@ -2249,7 +2390,7 @@ bare_pdfium_font_metrics(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium__unlock();
 
   if (!known) {
-    bare_pdfium__throw(env, "unknown font");
+    bare_pdfium__throw(env, BARE_PDFIUM_E_FONT_UNKNOWN);
     return NULL;
   }
 

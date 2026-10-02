@@ -16,6 +16,7 @@
   "files": [
     "index.js",
     "encrypt.js",
+    "errors.js",
     "compose.js",
     "index.d.ts",
     "binding.c",

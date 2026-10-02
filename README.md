@@ -145,8 +145,38 @@ try {
 }
 ```
 
-Page calls throw (or, when async, reject) on an out-of-range page; `render` also
-throws on dimensions past a 20000px-per-side guard.
+Every other error carries an `err.code` too, so callers can branch without
+matching messages. Async calls reject with the same codes.
+
+| `err.code`         | meaning                                                                           |
+| ------------------ | --------------------------------------------------------------------------------- |
+| `INVALID_ARGUMENT` | an option or argument has the wrong type or value (a `TypeError` or `RangeError`) |
+| `PAGE_RANGE`       | a page index past the end of the document                                         |
+| `PAGE`             | a page, or its text layer, could not be loaded                                    |
+| `CLOSED`           | the document was closed, including before a queued async call ran                 |
+| `LIMIT`            | `render` past the 20000px-per-side guard                                          |
+| `MEMORY`           | a bitmap could not be allocated                                                   |
+| `UNSUPPORTED_TEXT` | text the built-in fonts cannot draw; pass a TrueType font                         |
+| `FONT`             | a font failed to load, or a draw item names one the document has not loaded       |
+| `IMAGE`            | image data is not a PNG or JPEG PDFium can embed                                  |
+| `IMPORT`           | pages could not be copied between documents                                       |
+| `FORM`             | the document's form could not be loaded                                           |
+| `NO_FORM`          | the document has no form fields                                                   |
+| `FIELD_NOT_FOUND`  | `fillFields` names a field the form does not have                                 |
+| `FIELD_READ_ONLY`  | the field is read-only                                                            |
+| `FIELD_TYPE`       | the field is a button or signature, which cannot be filled                        |
+| `FIELD_REJECTED`   | the field did not take the value when read back                                   |
+| `SAVE`             | PDFium could not write the document                                               |
+| `ENCRYPT`          | the saved PDF could not be encrypted                                              |
+| `EDIT`             | PDFium refused an edit (a page, text object or shape could not be created)        |
+
+### Lifetime
+
+`close()` frees a document straight away. A document that is never closed is
+freed when it is garbage collected, without blocking: if PDFium is busy with
+another call, the release runs on a worker thread instead. When the process
+exits, documents still open are closed after any async calls on them finish;
+those calls neither resolve nor reject, as nothing is left to observe them.
 
 ### One-shot helpers
 

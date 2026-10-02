@@ -1,3 +1,4 @@
+const { invalid, failure } = require('./errors')
 const crypto = require('bare-crypto')
 
 const WHITESPACE = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20])
@@ -52,7 +53,7 @@ class Lexer {
     const { pdf } = this
     const start = this.pos
     const byte = pdf[start]
-    if (byte === undefined) throw new Error('unexpected end of PDF')
+    if (byte === undefined) throw failure('ENCRYPT', 'unexpected end of PDF')
 
     if (byte === 0x3c && pdf[start + 1] === 0x3c) {
       this.pos += 2
@@ -80,7 +81,7 @@ class Lexer {
       return { type: 'name', start, end: this.pos, text: this.text(start, this.pos) }
     }
     if (byte === 0x29 || byte === 0x3e)
-      throw new Error(`unexpected '${String.fromCharCode(byte)}' in PDF`)
+      throw failure('ENCRYPT', `unexpected '${String.fromCharCode(byte)}' in PDF`)
 
     while (isRegular(pdf[this.pos])) this.pos++
     return { type: 'word', start, end: this.pos, text: this.text(start, this.pos) }
@@ -96,7 +97,7 @@ class Lexer {
     let depth = 1
     while (true) {
       const byte = pdf[this.pos++]
-      if (byte === undefined) throw new Error('unterminated string in PDF')
+      if (byte === undefined) throw failure('ENCRYPT', 'unterminated string in PDF')
       if (byte === 0x5c) {
         const escaped = pdf[this.pos++]
         if (escaped === 0x6e) bytes.push(0x0a)
@@ -138,10 +139,10 @@ class Lexer {
     let digits = ''
     while (true) {
       const byte = pdf[this.pos++]
-      if (byte === undefined) throw new Error('unterminated hex string in PDF')
+      if (byte === undefined) throw failure('ENCRYPT', 'unterminated hex string in PDF')
       if (byte === 0x3e) break
       if (isHexDigit(byte)) digits += String.fromCharCode(byte)
-      else if (!WHITESPACE.has(byte)) throw new Error('bad hex string in PDF')
+      else if (!WHITESPACE.has(byte)) throw failure('ENCRYPT', 'bad hex string in PDF')
     }
     if (digits.length % 2) digits += '0'
     return Buffer.from(digits, 'hex')
@@ -156,13 +157,16 @@ class Lexer {
 function readXref(pdf) {
   const tail = pdf.subarray(Math.max(0, pdf.length - 2048)).toString('latin1')
   const at = tail.lastIndexOf('startxref')
-  if (at === -1) throw new Error('saved PDF has no startxref')
+  if (at === -1) throw failure('ENCRYPT', 'saved PDF has no startxref')
   const match = /^startxref\s+(\d+)/.exec(tail.slice(at))
-  if (!match) throw new Error('saved PDF has a bad startxref')
+  if (!match) throw failure('ENCRYPT', 'saved PDF has a bad startxref')
 
   const lexer = new Lexer(pdf, Number(match[1]))
   if (lexer.next().text !== 'xref') {
-    throw new Error('saved PDF uses a cross-reference stream, which encryption does not support')
+    throw failure(
+      'ENCRYPT',
+      'saved PDF uses a cross-reference stream, which encryption does not support'
+    )
   }
 
   const objects = []
@@ -180,13 +184,13 @@ function readXref(pdf) {
 
   const trailer = readTrailer(lexer)
   if (trailer.prev)
-    throw new Error('saved PDF has incremental updates, which encryption does not support')
+    throw failure('ENCRYPT', 'saved PDF has incremental updates, which encryption does not support')
   return { objects, trailer }
 }
 
 function readTrailer(lexer) {
   const trailer = { size: 0, root: null, info: null, id: null, prev: false }
-  if (lexer.next().type !== 'open') throw new Error('saved PDF has a bad trailer')
+  if (lexer.next().type !== 'open') throw failure('ENCRYPT', 'saved PDF has a bad trailer')
 
   let depth = 1
   while (depth > 0) {
@@ -206,7 +210,7 @@ function readTrailer(lexer) {
     }
   }
 
-  if (!trailer.root) throw new Error('saved PDF has no /Root')
+  if (!trailer.root) throw failure('ENCRYPT', 'saved PDF has no /Root')
   return trailer
 }
 
@@ -250,12 +254,9 @@ function permissionFlags(permissions) {
   let flags = 0xfffff2c0
   for (const [name, allowed] of Object.entries(permissions)) {
     if (!(name in PERMISSION_BITS)) {
-      throw new TypeError(
-        `unknown permission '${name}'; use ${Object.keys(PERMISSION_BITS).join(', ')}`
-      )
+      throw invalid(`unknown permission '${name}'; use ${Object.keys(PERMISSION_BITS).join(', ')}`)
     }
-    if (typeof allowed !== 'boolean')
-      throw new TypeError(`permission '${name}' must be true or false`)
+    if (typeof allowed !== 'boolean') throw invalid(`permission '${name}' must be true or false`)
   }
   for (const [name, bit] of Object.entries(PERMISSION_BITS)) {
     if (permissions[name] !== false) flags |= 1 << (bit - 1)
@@ -273,16 +274,13 @@ function securityHandler(opts) {
     ownerPassword = crypto.randomBytes(32).toString('hex'),
     permissions = {}
   } = opts
-  if (typeof password !== 'string') throw new TypeError('encrypt.password must be a string')
-  if (typeof ownerPassword !== 'string')
-    throw new TypeError('encrypt.ownerPassword must be a string')
+  if (typeof password !== 'string') throw invalid('encrypt.password must be a string')
+  if (typeof ownerPassword !== 'string') throw invalid('encrypt.ownerPassword must be a string')
   if (password === '' && opts.ownerPassword === undefined) {
-    throw new TypeError(
-      'an empty password needs an ownerPassword, or anyone could lift the restrictions'
-    )
+    throw invalid('an empty password needs an ownerPassword, or anyone could lift the restrictions')
   }
   if (permissions === null || typeof permissions !== 'object') {
-    throw new TypeError('encrypt.permissions must be an object')
+    throw invalid('encrypt.permissions must be an object')
   }
 
   const flags = permissionFlags(permissions)
@@ -336,7 +334,7 @@ function directInteger(pdf, lexer, token, offsets) {
   if (keyword && keyword.text === 'R') {
     const target = offsets.get(Number(token.text))
     if (target === undefined)
-      throw new Error(`stream length refers to missing object ${token.text}`)
+      throw failure('ENCRYPT', `stream length refers to missing object ${token.text}`)
     const inner = new Lexer(pdf, target)
     inner.next()
     inner.next()
@@ -353,7 +351,7 @@ function encryptObject(pdf, entry, fileKey, offsets) {
   const generation = lexer.next()
   const keyword = lexer.next()
   if (keyword.text !== 'obj' || Number(number.text) !== entry.number) {
-    throw new Error(`object ${entry.number} is not where the cross-reference table says`)
+    throw failure('ENCRYPT', `object ${entry.number} is not where the cross-reference table says`)
   }
 
   const tokens = []
@@ -367,12 +365,13 @@ function encryptObject(pdf, entry, fileKey, offsets) {
     if (token.type === 'word' && token.text === 'endobj') break
     if (token.type === 'word' && token.text === 'stream') {
       lexer.eol()
-      if (length === null) throw new Error(`stream in object ${entry.number} has no /Length`)
+      if (length === null)
+        throw failure('ENCRYPT', `stream in object ${entry.number} has no /Length`)
       stream = pdf.subarray(lexer.pos, lexer.pos + length.value)
       lexer.pos += length.value
       const end = lexer.next()
       if (end.text !== 'endstream')
-        throw new Error(`stream in object ${entry.number} has the wrong /Length`)
+        throw failure('ENCRYPT', `stream in object ${entry.number} has the wrong /Length`)
       continue
     }
 
@@ -396,7 +395,10 @@ function encryptObject(pdf, entry, fileKey, offsets) {
 
   if (type === '/XRef') return null
   if (type === '/ObjStm') {
-    throw new Error('saved PDF contains an object stream, which encryption does not support')
+    throw failure(
+      'ENCRYPT',
+      'saved PDF contains an object stream, which encryption does not support'
+    )
   }
 
   const encrypted = stream ? aes256(fileKey, stream) : null
