@@ -44,8 +44,25 @@ export interface WatermarkOptions extends PageOptions {
   font?: Uint8Array | null
 }
 
+export interface Permissions {
+  print?: boolean
+  modify?: boolean
+  copy?: boolean
+  annotate?: boolean
+  fillForms?: boolean
+  assemble?: boolean
+  printHighQuality?: boolean
+}
+
+export interface EncryptOptions {
+  password: string
+  ownerPassword?: string
+  permissions?: Permissions
+}
+
 export interface SaveOptions {
   removeSecurity?: boolean
+  encrypt?: EncryptOptions
 }
 
 export type FieldType =
@@ -137,6 +154,12 @@ export function rotate(
 
 export function decrypt(pdf: Uint8Array, password: string): Uint8Array
 
+export function encrypt(
+  pdf: Uint8Array,
+  password: string,
+  opts?: Omit<EncryptOptions, 'password'>
+): Uint8Array
+
 export function watermark(
   pdf: Uint8Array,
   text: string,
@@ -162,6 +185,12 @@ export function rotateAsync(
 ): Promise<Uint8Array>
 
 export function decryptAsync(pdf: Uint8Array, password: string): Promise<Uint8Array>
+
+export function encryptAsync(
+  pdf: Uint8Array,
+  password: string,
+  opts?: Omit<EncryptOptions, 'password'>
+): Promise<Uint8Array>
 
 export function watermarkAsync(
   pdf: Uint8Array,

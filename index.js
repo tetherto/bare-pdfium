@@ -1,5 +1,14 @@
 const binding = require('./binding')
 
+let encryptPdf = null
+
+function encrypted(data, encrypt) {
+  if (encrypt === undefined || encrypt === null) return data
+  if (typeof encrypt !== 'object') throw new TypeError('encrypt must be an object with a password')
+  encryptPdf ??= require('./encrypt')
+  return encryptPdf(data, encrypt)
+}
+
 let pending = Promise.resolve()
 
 function serialize(job) {
@@ -392,16 +401,18 @@ class Doc {
   }
 
   _saveArgs(opts) {
-    const { removeSecurity = false } = opts
-    return [this._open(), removeSecurity === true]
+    const { removeSecurity = false, encrypt = null } = opts
+    return [this._open(), removeSecurity === true || encrypt !== null]
   }
 
   save(opts = {}) {
-    return Buffer.from(binding.save(...this._saveArgs(opts)))
+    return encrypted(Buffer.from(binding.save(...this._saveArgs(opts))), opts.encrypt)
   }
 
   saveAsync(opts = {}) {
-    return queue(() => this._saveArgs(opts), binding.saveAsync).then((data) => Buffer.from(data))
+    return queue(() => this._saveArgs(opts), binding.saveAsync).then((data) =>
+      encrypted(Buffer.from(data), opts.encrypt)
+    )
   }
 
   close() {
@@ -498,6 +509,11 @@ exports.decrypt = function decrypt(pdf, password) {
   return edit(pdf, { password }, (doc) => doc.save({ removeSecurity: true }))
 }
 
+exports.encrypt = function encrypt(pdf, password, opts = {}) {
+  const { ownerPassword, permissions } = opts
+  return edit(pdf, {}, (doc) => doc.save({ encrypt: { password, ownerPassword, permissions } }))
+}
+
 exports.watermark = function watermark(pdf, text, opts = {}) {
   return edit(pdf, opts, (doc) => {
     doc.watermark(text, opts)
@@ -557,6 +573,13 @@ exports.rotateAsync = async function rotateAsync(pdf, degrees, opts = {}) {
 
 exports.decryptAsync = async function decryptAsync(pdf, password) {
   return editAsync(pdf, { password }, (doc) => doc.saveAsync({ removeSecurity: true }))
+}
+
+exports.encryptAsync = async function encryptAsync(pdf, password, opts = {}) {
+  const { ownerPassword, permissions } = opts
+  return editAsync(pdf, {}, (doc) =>
+    doc.saveAsync({ encrypt: { password, ownerPassword, permissions } })
+  )
 }
 
 exports.watermarkAsync = async function watermarkAsync(pdf, text, opts = {}) {

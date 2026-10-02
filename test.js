@@ -771,3 +771,168 @@ test('async edits interleave with async reads on other documents', async (t) => 
   t.is(results[2].width, 200)
   reader.close()
 })
+
+function objectStreamPdf() {
+  const content = 'BT /F1 24 Tf 40 100 Td (Packed) Tj ET'
+  const packed = [
+    '<< /Type /Catalog /Pages 3 0 R >>',
+    '<< /Type /Pages /Kids [4 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 3 0 R /MediaBox [0 0 200 200] /Contents 5 0 R /Resources << /Font << /F1 6 0 R >> >> >>'
+  ]
+  let index = ''
+  let body = ''
+  packed.forEach((object, i) => {
+    index += `${i + 2} ${body.length} `
+    body += object + '\n'
+  })
+  const objstm = index + body
+
+  let pdf = '%PDF-1.5\n'
+  const offsets = {}
+  const add = (number, text) => {
+    offsets[number] = pdf.length
+    pdf += `${number} 0 obj\n${text}\nendobj\n`
+  }
+  add(
+    1,
+    `<< /Type /ObjStm /N 3 /First ${index.length} /Length ${objstm.length} >>\nstream\n${objstm}\nendstream`
+  )
+  add(5, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`)
+  add(6, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+
+  const row = (type, a, b) =>
+    String.fromCharCode(
+      type,
+      (a >>> 24) & 255,
+      (a >>> 16) & 255,
+      (a >>> 8) & 255,
+      a & 255,
+      (b >>> 8) & 255,
+      b & 255
+    )
+  const xrefOffset = pdf.length
+  const rows =
+    row(0, 0, 65535) +
+    row(1, offsets[1], 0) +
+    row(2, 1, 0) +
+    row(2, 1, 1) +
+    row(2, 1, 2) +
+    row(1, offsets[5], 0) +
+    row(1, offsets[6], 0) +
+    row(1, xrefOffset, 0)
+  pdf += `7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Root 2 0 R /Length ${rows.length} >>\nstream\n${rows}\nendstream\nendobj\n`
+  pdf += `startxref\n${xrefOffset}\n%%EOF`
+  return Buffer.from(pdf, 'latin1')
+}
+
+function rejection(fn) {
+  try {
+    fn()
+  } catch (err) {
+    return err
+  }
+  return null
+}
+
+test('encrypt locks a PDF behind a password', (t) => {
+  const locked = addon.encrypt(twoPageTextPdf(), 'open sesame')
+  t.is(rejection(() => addon.open(locked)).code, 'PASSWORD', 'needs the password')
+  t.is(
+    rejection(() => addon.open(locked, { password: 'wrong' })).code,
+    'PASSWORD',
+    'refuses a wrong one'
+  )
+  const texts = pageTexts(locked, { password: 'open sesame' })
+  t.ok(texts[0].includes('Page One') && texts[1].includes('Page Two'), 'content survives')
+})
+
+test('encrypt keeps pages identical to the original', (t) => {
+  const original = addon.render(imagePdf(), 0, { scale: 1 }).data
+  const locked = addon.render(addon.encrypt(imagePdf(), 'pw'), 0, { scale: 1, password: 'pw' }).data
+  t.ok(Buffer.compare(original, locked) === 0)
+})
+
+test('the owner password also opens an encrypted PDF', (t) => {
+  const locked = addon.encrypt(textPdf(), 'user', { ownerPassword: 'owner' })
+  t.ok(pageTexts(locked, { password: 'owner' })[0].includes('Hello PDF'))
+  t.ok(pageTexts(locked, { password: 'user' })[0].includes('Hello PDF'))
+})
+
+test('permissions are written into the encryption settings', (t) => {
+  const pFlag = (pdf) => Number(/\/P (-?\d+)/.exec(pdf.toString('latin1'))[1])
+  t.is(pFlag(addon.encrypt(textPdf(), 'pw')), -4, 'everything allowed by default')
+  t.is(
+    pFlag(addon.encrypt(textPdf(), 'pw', { permissions: { copy: false, print: false } })) &
+      (1 << 9),
+    1 << 9,
+    'bit 10 is always set, as PDF 2.0 requires'
+  )
+  t.exception.all(
+    () => addon.encrypt(textPdf(), 'pw', { permissions: { extract: false } }),
+    /unknown permission 'extract'/
+  )
+  t.is(pFlag(addon.encrypt(textPdf(), 'pw', { permissions: { copy: false } })), -4 & ~16)
+  t.is(
+    pFlag(addon.encrypt(textPdf(), 'pw', { permissions: { print: false, modify: false } })),
+    -4 & ~4 & ~8
+  )
+})
+
+test('encrypt then decrypt gives back an open PDF', (t) => {
+  const open = addon.decrypt(addon.encrypt(textPdf(), 'pw'), 'pw')
+  t.ok(pageTexts(open)[0].includes('Hello PDF'))
+})
+
+test('save can re-encrypt a PDF under a new password', (t) => {
+  const doc = addon.open(addon.encrypt(textPdf(), 'old'), { password: 'old' })
+  const relocked = doc.save({ encrypt: { password: 'new' } })
+  doc.close()
+  t.is(rejection(() => addon.open(relocked, { password: 'old' })).code, 'PASSWORD')
+  t.ok(pageTexts(relocked, { password: 'new' })[0].includes('Hello PDF'))
+})
+
+test('encrypt applies after other edits and keeps form fields', (t) => {
+  const doc = addon.open(formPdf())
+  doc.fillFields({ name: 'Ada Lovelace', agree: true })
+  doc.watermark('DRAFT')
+  const locked = doc.save({ encrypt: { password: 'pw' } })
+  const expected = doc.fields()
+  doc.close()
+  t.alike(
+    addon.fields(locked, { password: 'pw' }),
+    expected,
+    'field names and values are decrypted intact'
+  )
+  t.ok(pageTexts(locked, { password: 'pw' })[0].includes('DRAFT'))
+})
+
+test('encrypt handles a PDF packed into object streams', (t) => {
+  const locked = addon.encrypt(objectStreamPdf(), 'pw')
+  t.ok(pageTexts(locked, { password: 'pw' })[0].includes('Packed'))
+})
+
+test('encryptAsync and saveAsync with encrypt match the sync forms', async (t) => {
+  const one = await addon.encryptAsync(twoPageTextPdf(), 'pw', { ownerPassword: 'owner' })
+  t.ok(pageTexts(one, { password: 'owner' })[1].includes('Page Two'))
+  const doc = addon.open(textPdf())
+  const two = await doc.saveAsync({ encrypt: { password: 'pw' } })
+  doc.close()
+  t.is(rejection(() => addon.open(two)).code, 'PASSWORD')
+  t.ok(pageTexts(two, { password: 'pw' })[0].includes('Hello PDF'))
+})
+
+test('encrypt validates its options', (t) => {
+  t.exception.all(() => addon.encrypt(textPdf(), 42), /password must be a string/)
+  t.exception.all(() => addon.encrypt(textPdf(), ''), /empty password needs an ownerPassword/)
+  t.exception.all(
+    () => addon.encrypt(textPdf(), 'pw', { permissions: { share: false } }),
+    /unknown permission 'share'/
+  )
+  t.exception.all(
+    () => addon.encrypt(textPdf(), 'pw', { permissions: { copy: 'no' } }),
+    /true or false/
+  )
+  t.exception.all(() => addon.open(textPdf()).save({ encrypt: 'pw' }), /encrypt must be an object/)
+  const blank = addon.encrypt(textPdf(), '', { ownerPassword: 'owner' })
+  t.ok(pageTexts(blank)[0].includes('Hello PDF'), 'an empty user password opens without one')
+})
