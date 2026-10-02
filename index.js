@@ -35,6 +35,178 @@ function closedError() {
   return Promise.reject(new Error('document is closed'))
 }
 
+const STANDARD_FONTS = new Set([
+  'Helvetica',
+  'Helvetica-Bold',
+  'Helvetica-Oblique',
+  'Helvetica-BoldOblique',
+  'Times-Roman',
+  'Times-Bold',
+  'Times-Italic',
+  'Times-BoldItalic',
+  'Courier',
+  'Courier-Bold',
+  'Courier-Oblique',
+  'Courier-BoldOblique'
+])
+
+const WIN_ANSI = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ'.split('').map((ch) => ch.codePointAt(0)))
+
+function standardFontChar(code) {
+  return (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || WIN_ANSI.has(code)
+}
+
+const SUBSTITUTES = new Map(
+  Object.entries({
+    '→': '->',
+    '⟶': '->',
+    '⇒': '=>',
+    '←': '<-',
+    '⟵': '<-',
+    '⇐': '<=',
+    '↔': '<->',
+    '⇔': '<=>',
+    '↑': '^',
+    '↓': 'v',
+    '≥': '>=',
+    '≤': '<=',
+    '≠': '!=',
+    '≈': '~',
+    '∼': '~',
+    '−': '-',
+    '∗': '*',
+    '∕': '/',
+    '⁄': '/',
+    '‐': '-',
+    '‑': '-',
+    '‒': '–',
+    '―': '—',
+    '′': "'",
+    '″': '"',
+    '‛': "'",
+    '‟': '"',
+    '◦': '•',
+    '▪': '•',
+    '▫': '•',
+    '▸': '•',
+    '▹': '•',
+    '►': '•',
+    '‣': '•',
+    '●': '•',
+    '○': '•',
+    '■': '•',
+    '□': '•',
+    '◆': '•',
+    '◇': '•',
+    '⁃': '-',
+    '∙': '·',
+    '⋅': '·',
+    '✓': 'v',
+    '✔': 'v',
+    '☑': 'v',
+    '✅': 'v',
+    '✗': 'x',
+    '✘': 'x',
+    '✕': 'x',
+    '✖': 'x',
+    '❌': 'x',
+    '★': '*',
+    '☆': '*',
+    '⭐': '*',
+    Ł: 'L',
+    ł: 'l',
+    Đ: 'D',
+    đ: 'd',
+    Ħ: 'H',
+    ħ: 'h',
+    ı: 'i',
+    Ŧ: 'T',
+    ŧ: 't',
+    Ŀ: 'L',
+    ŀ: 'l',
+    ĸ: 'k'
+  })
+)
+
+function isInvisibleOrEmoji(ch, code) {
+  return (
+    (code >= 0x200b && code <= 0x200d) ||
+    code === 0x2060 ||
+    code === 0xfeff ||
+    code === 0x20e3 ||
+    (code >= 0xfe00 && code <= 0xfe0f) ||
+    (code >= 0x1f1e6 && code <= 0x1f1ff) ||
+    (code >= 0x1f3fb && code <= 0x1f3ff) ||
+    (code >= 0xe0000 && code <= 0xe01ef) ||
+    /\p{Emoji_Presentation}/u.test(ch) ||
+    (code >= 0x1f000 && /\p{Extended_Pictographic}/u.test(ch))
+  )
+}
+
+function drawableText(text) {
+  let out = ''
+  for (const ch of text) {
+    if (!isInvisibleOrEmoji(ch, ch.codePointAt(0))) out += ch
+  }
+  return out
+}
+
+function standardText(text) {
+  let out = ''
+  const missing = []
+  for (const ch of text.normalize('NFC')) {
+    const code = ch.codePointAt(0)
+    if (ch === '\n' || ch === '\t' || standardFontChar(code)) {
+      out += ch
+      continue
+    }
+    const substitute = SUBSTITUTES.get(ch)
+    if (substitute !== undefined) {
+      out += substitute
+      continue
+    }
+    if (isInvisibleOrEmoji(ch, code)) continue
+    if (/\s/u.test(ch)) {
+      out += ' '
+      continue
+    }
+    const base = ch.normalize('NFKD').replace(/\p{M}/gu, '')
+    if (base && [...base].every((c) => standardFontChar(c.codePointAt(0)))) {
+      out += base
+      continue
+    }
+    if (/[\p{L}\p{N}]/u.test(ch) && !missing.includes(ch)) missing.push(ch)
+  }
+  if (missing.length) {
+    const named = missing
+      .slice(0, 5)
+      .map((ch) => `'${ch}' (U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')})`)
+      .join(', ')
+    throw new TypeError(
+      `${named}${missing.length > 5 ? ' and more' : ''} cannot be drawn by the built-in fonts; pass a TrueType font that covers them`
+    )
+  }
+  return out
+}
+
+function prepareText(text, standard) {
+  return standard ? standardText(text) : drawableText(text)
+}
+
+const DRAW_KINDS = {
+  text: binding.DRAW_TEXT,
+  rect: binding.DRAW_RECT,
+  line: binding.DRAW_LINE,
+  image: binding.DRAW_IMAGE
+}
+
+let compose = null
+
+function color(value, opacity = 1, where = 'color') {
+  if (value === undefined || value === null) return 0
+  return packColor(value, opacity, where)
+}
+
 function pageList(count, pages) {
   if (pages === undefined) return Int32Array.from({ length: count }, (_, i) => i)
   if (!Array.isArray(pages)) throw new TypeError('pages must be an array of page indexes')
@@ -53,16 +225,16 @@ function quarterTurns(degrees) {
   return (degrees / 90) % 4
 }
 
-function packColor(color, opacity) {
+function packColor(color, opacity, where = 'color') {
   if (!Array.isArray(color) || color.length !== 3) {
-    throw new TypeError('color must be [r, g, b] with each channel 0-255')
+    throw new TypeError(`${where} must be [r, g, b] with each channel 0-255`)
   }
   if (typeof opacity !== 'number' || opacity < 0 || opacity > 1) {
     throw new TypeError(`opacity must be between 0 and 1, got ${opacity}`)
   }
   const channels = [...color, Math.round(opacity * 255)].map((channel) => {
     if (!Number.isInteger(channel) || channel < 0 || channel > 255) {
-      throw new TypeError('color must be [r, g, b] with each channel 0-255')
+      throw new TypeError(`${where} must be [r, g, b] with each channel 0-255`)
     }
     return channel
   })
@@ -118,6 +290,69 @@ function groupFields(widgets) {
 
 function queue(args, call) {
   return serialize(() => call(...args()))
+}
+
+function drawItem(item) {
+  const kind = item && DRAW_KINDS[item.type]
+  if (kind === undefined) {
+    throw new TypeError(`draw items must have a type of ${Object.keys(DRAW_KINDS).join(', ')}`)
+  }
+  const number = (name, value, fallback) => {
+    if (value === undefined && fallback !== undefined) return fallback
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new TypeError(`${item.type} ${name} must be a number`)
+    }
+    return value
+  }
+
+  if (item.type === 'text') {
+    if (typeof item.text !== 'string') throw new TypeError('text items need a string text')
+    return {
+      kind,
+      text: item.text,
+      font: number('font', item.font),
+      size: number('size', item.size, 12),
+      x: number('x', item.x),
+      y: number('y', item.y),
+      fill: color(item.color ?? [0, 0, 0], item.opacity, 'text color')
+    }
+  }
+
+  if (item.type === 'rect') {
+    return {
+      kind,
+      x: number('x', item.x),
+      y: number('y', item.y),
+      width: number('width', item.width),
+      height: number('height', item.height),
+      fill: color(item.fill, item.opacity, 'rect fill'),
+      stroke: color(item.stroke, 1, 'rect stroke'),
+      lineWidth: number('lineWidth', item.lineWidth, 1)
+    }
+  }
+
+  if (item.type === 'line') {
+    return {
+      kind,
+      x: number('x1', item.x1),
+      y: number('y1', item.y1),
+      x2: number('x2', item.x2),
+      y2: number('y2', item.y2),
+      stroke: color(item.color ?? [0, 0, 0], 1, 'line color'),
+      lineWidth: number('lineWidth', item.lineWidth, 1)
+    }
+  }
+
+  compose ??= require('./compose')
+  const image = item.image && item.image.pixelWidth ? item.image : compose.decodeImage(item.image)
+  return {
+    kind,
+    ...image,
+    x: number('x', item.x),
+    y: number('y', item.y),
+    width: number('width', item.width),
+    height: number('height', item.height)
+  }
 }
 
 function prepareFill(list, values) {
@@ -351,13 +586,12 @@ class Doc {
     if (position !== 'over' && position !== 'under') {
       throw new TypeError(`position must be 'over' or 'under', got '${position}'`)
     }
-    if (font === null && /[^\x20-\xff]/.test(text)) {
-      throw new TypeError('text outside Latin-1 needs a TrueType font passed as opts.font')
-    }
+    const drawable = prepareText(text, font === null).trim()
+    if (!drawable) throw new TypeError('watermark text has nothing that can be drawn')
     return [
       handle,
       pageList(this.pageCount(), pages),
-      text,
+      drawable,
       font,
       size,
       angle,
@@ -398,6 +632,64 @@ class Doc {
       const after = groupFields(await binding.formWidgetsAsync(handle))
       return checkFill(after, names, filled, values)
     })
+  }
+
+  addPage(opts = {}) {
+    const handle = this._open()
+    const count = this.pageCount()
+    const { width = 595.28, height = 841.89, at = count } = opts
+    for (const [name, value] of Object.entries({ width, height })) {
+      if (typeof value !== 'number' || value < 1 || value > 14400) {
+        throw new RangeError(`${name} must be 1 to 14400 points, got ${value}`)
+      }
+    }
+    if (!Number.isInteger(at) || at < 0 || at > count) {
+      throw new RangeError(`at must be a page index from 0 to ${count}, got ${at}`)
+    }
+    binding.newPage(handle, at, width, height)
+    return at
+  }
+
+  loadFont(font) {
+    const handle = this._open()
+    if (typeof font === 'string') {
+      if (!STANDARD_FONTS.has(font)) {
+        throw new TypeError(
+          `font must be TrueType bytes or a built-in font name: ${[...STANDARD_FONTS].join(', ')}`
+        )
+      }
+    } else if (!ArrayBuffer.isView(font) || font.byteLength === 0) {
+      throw new TypeError('font must be TrueType bytes or a built-in font name')
+    }
+    return binding.loadFont(handle, font)
+  }
+
+  measureText(text, font, size) {
+    if (typeof text !== 'string') throw new TypeError('text must be a string')
+    return (binding.measure(this._open(), font, text) * size) / 1000
+  }
+
+  fontMetrics(font, size) {
+    const { ascent, descent } = binding.fontMetrics(this._open(), font)
+    return { ascent: (ascent * size) / 1000, descent: (descent * size) / 1000 }
+  }
+
+  _drawArgs(page, items) {
+    const handle = this._open()
+    const count = this.pageCount()
+    if (!Number.isInteger(page) || page < 0 || page >= count) {
+      throw new RangeError(`page ${page} is out of range; the document has ${count} pages`)
+    }
+    if (!Array.isArray(items)) throw new TypeError('draw takes an array of items')
+    return [handle, page, items.map(drawItem)]
+  }
+
+  draw(page, items) {
+    binding.draw(...this._drawArgs(page, items))
+  }
+
+  drawAsync(page, items) {
+    return queue(() => this._drawArgs(page, items), binding.drawAsync)
   }
 
   _saveArgs(opts) {
@@ -514,6 +806,27 @@ exports.encrypt = function encrypt(pdf, password, opts = {}) {
   return edit(pdf, {}, (doc) => doc.save({ encrypt: { password, ownerPassword, permissions } }))
 }
 
+function composeInto(content, opts) {
+  compose ??= require('./compose')
+  const doc = exports.create()
+  try {
+    compose(doc, content, opts, prepareText)
+    return doc
+  } catch (err) {
+    doc.close()
+    throw err
+  }
+}
+
+exports.compose = function composePdf(content, opts = {}) {
+  const doc = composeInto(content, opts)
+  try {
+    return doc.save(opts.encrypt ? { encrypt: opts.encrypt } : {})
+  } finally {
+    doc.close()
+  }
+}
+
 exports.watermark = function watermark(pdf, text, opts = {}) {
   return edit(pdf, opts, (doc) => {
     doc.watermark(text, opts)
@@ -580,6 +893,15 @@ exports.encryptAsync = async function encryptAsync(pdf, password, opts = {}) {
   return editAsync(pdf, {}, (doc) =>
     doc.saveAsync({ encrypt: { password, ownerPassword, permissions } })
   )
+}
+
+exports.composeAsync = async function composeAsync(content, opts = {}) {
+  const doc = composeInto(content, opts)
+  try {
+    return await doc.saveAsync(opts.encrypt ? { encrypt: opts.encrypt } : {})
+  } finally {
+    doc.close()
+  }
 }
 
 exports.watermarkAsync = async function watermarkAsync(pdf, text, opts = {}) {

@@ -44,6 +44,87 @@ export interface WatermarkOptions extends PageOptions {
   font?: Uint8Array | null
 }
 
+export type Color = [number, number, number]
+
+export type DrawItem =
+  | {
+      type: 'text'
+      text: string
+      font: number
+      size?: number
+      x: number
+      y: number
+      color?: Color
+      opacity?: number
+    }
+  | {
+      type: 'rect'
+      x: number
+      y: number
+      width: number
+      height: number
+      fill?: Color
+      stroke?: Color
+      lineWidth?: number
+      opacity?: number
+    }
+  | {
+      type: 'line'
+      x1: number
+      y1: number
+      x2: number
+      y2: number
+      color?: Color
+      lineWidth?: number
+    }
+  | { type: 'image'; image: Uint8Array; x: number; y: number; width: number; height: number }
+
+export interface AddPageOptions {
+  width?: number
+  height?: number
+  at?: number
+}
+
+export type Run = string | { text: string; bold?: boolean; italic?: boolean; code?: boolean }
+
+export type Inline = string | Run[]
+
+export interface ListItem {
+  text: Inline
+  items?: Array<Inline | ListItem>
+  ordered?: boolean
+}
+
+export type Block =
+  | { type: 'heading'; level?: 1 | 2 | 3 | 4 | 5 | 6; text: Inline }
+  | { type: 'paragraph'; text: Inline; align?: 'left' | 'center' }
+  | { type: 'list'; items: Array<Inline | ListItem>; ordered?: boolean; start?: number }
+  | { type: 'table'; header?: Inline[]; rows: Inline[][] }
+  | { type: 'image'; data: Uint8Array; width?: number; caption?: Inline }
+  | { type: 'code'; text: string }
+  | { type: 'quote'; text: Inline }
+  | { type: 'rule' }
+  | { type: 'pageBreak' }
+
+export type FontSource =
+  | 'Helvetica'
+  | 'Times'
+  | 'Courier'
+  | Uint8Array
+  | { regular: Uint8Array; bold?: Uint8Array; italic?: Uint8Array; boldItalic?: Uint8Array }
+
+export interface ComposeOptions {
+  pageSize?: 'A4' | 'A5' | 'Letter' | 'Legal' | [number, number]
+  landscape?: boolean
+  margin?: number
+  font?: FontSource
+  monoFont?: FontSource
+  fontSize?: number
+  lineHeight?: number
+  pageNumbers?: boolean
+  encrypt?: EncryptOptions
+}
+
 export interface Permissions {
   print?: boolean
   modify?: boolean
@@ -114,6 +195,12 @@ export class Doc {
   fieldsAsync(): Promise<Field[]>
   fillFields(values: FieldValues): Field[]
   fillFieldsAsync(values: FieldValues): Promise<Field[]>
+  addPage(opts?: AddPageOptions): number
+  loadFont(font: string | Uint8Array): number
+  measureText(text: string, font: number, size: number): number
+  fontMetrics(font: number, size: number): { ascent: number; descent: number }
+  draw(page: number, items: DrawItem[]): void
+  drawAsync(page: number, items: DrawItem[]): Promise<void>
   save(opts?: SaveOptions): Uint8Array
   saveAsync(opts?: SaveOptions): Promise<Uint8Array>
   close(): void
@@ -205,3 +292,7 @@ export function fillFieldsAsync(
   values: FieldValues,
   opts?: OpenOptions
 ): Promise<Uint8Array>
+
+export function compose(content: string | Block[], opts?: ComposeOptions): Uint8Array
+
+export function composeAsync(content: string | Block[], opts?: ComposeOptions): Promise<Uint8Array>
