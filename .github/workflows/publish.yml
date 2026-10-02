@@ -4,8 +4,9 @@ on:
     tags:
       - v*
 permissions:
-  id-token: write
-  contents: write
+  contents: read
+env:
+  DEPOT_TOOLS_WIN_TOOLCHAIN: 0
 jobs:
   prebuild:
     strategy:
@@ -74,6 +75,9 @@ jobs:
           upload: true
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
     needs: prebuild
     environment:
       name: npm

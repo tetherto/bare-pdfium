@@ -6,6 +6,8 @@ on:
     branches: [main]
 permissions:
   contents: read
+env:
+  DEPOT_TOOLS_WIN_TOOLCHAIN: 0
 jobs:
   security:
     runs-on: ubuntu-latest

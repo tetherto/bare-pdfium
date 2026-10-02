@@ -21,6 +21,10 @@
 // no matching destroy — the library lives for the life of the process.
 static bool bare_pdfium_initialized = false;
 
+static size_t bare_pdfium_envs = 0;
+
+static size_t bare_pdfium_documents = 0;
+
 static uv_once_t bare_pdfium_lock_once = UV_ONCE_INIT;
 static uv_mutex_t bare_pdfium_lock_mutex;
 
@@ -163,6 +167,13 @@ bare_pdfium__ensure_init(void) {
   bare_pdfium_initialized = true;
 }
 
+static void
+bare_pdfium__maybe_destroy(void) {
+  if (!bare_pdfium_initialized || bare_pdfium_envs > 0 || bare_pdfium_documents > 0) return;
+  FPDF_DestroyLibrary();
+  bare_pdfium_initialized = false;
+}
+
 static bool
 bare_pdfium__trylock(void) {
   uv_once(&bare_pdfium_lock_once, bare_pdfium__init_lock);
@@ -175,6 +186,8 @@ bare_pdfium__release(bare_pdfium_doc_t *handle) {
   if (handle->doc) {
     FPDF_CloseDocument(handle->doc);
     handle->doc = NULL;
+    bare_pdfium_documents--;
+    bare_pdfium__maybe_destroy();
   }
 }
 
@@ -555,6 +568,7 @@ bare_pdfium_open(js_env_t *env, js_callback_info_t *info) {
   FPDF_DOCUMENT doc =
     FPDF_LoadMemDocument(copy, (int) len, password_len ? password : NULL);
   unsigned long code = doc == NULL ? FPDF_GetLastError() : FPDF_ERR_SUCCESS;
+  if (doc) bare_pdfium_documents++;
   bare_pdfium__unlock();
 
   if (doc == NULL) {
@@ -625,6 +639,7 @@ bare_pdfium_open_file(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium__ensure_init();
   handle->doc = FPDF_LoadCustomDocument(&handle->access, password_len ? password : NULL);
   unsigned long code = handle->doc == NULL ? FPDF_GetLastError() : FPDF_ERR_SUCCESS;
+  if (handle->doc) bare_pdfium_documents++;
   bare_pdfium__unlock();
 
   if (handle->doc == NULL) {
@@ -1139,6 +1154,7 @@ bare_pdfium_create(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium__lock();
   bare_pdfium__ensure_init();
   FPDF_DOCUMENT doc = FPDF_CreateNewDocument();
+  if (doc) bare_pdfium_documents++;
   bare_pdfium__unlock();
 
   if (doc == NULL) {
@@ -2416,9 +2432,24 @@ bare_pdfium_font_metrics(js_env_t *env, js_callback_info_t *info) {
   return result;
 }
 
+static void
+bare_pdfium__on_env_teardown(void *data) {
+  bare_pdfium__lock();
+  bare_pdfium_envs--;
+  bare_pdfium__maybe_destroy();
+  bare_pdfium__unlock();
+}
+
 static js_value_t *
 bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   int err;
+
+  bare_pdfium__lock();
+  bare_pdfium_envs++;
+  bare_pdfium__unlock();
+
+  err = js_add_teardown_callback(env, bare_pdfium__on_env_teardown, NULL);
+  assert(err == 0);
 
 #define V(name, fn) \
   { \
