@@ -1,3 +1,5 @@
+const { invalid, failure } = require('./errors')
+
 const PAGE_SIZES = {
   A4: [595.28, 841.89],
   A5: [419.53, 595.28],
@@ -39,7 +41,7 @@ function fontSources(font) {
   if (typeof font === 'string') {
     const family = FAMILIES[font]
     if (!family) {
-      throw new TypeError(
+      throw invalid(
         `font must be ${Object.keys(FAMILIES).join(', ')} or TrueType font bytes, got '${font}'`
       )
     }
@@ -49,11 +51,11 @@ function fontSources(font) {
   if (font && typeof font === 'object' && isFontBytes(font.regular)) {
     const { regular, bold = regular, italic = regular, boldItalic = bold } = font
     for (const [name, value] of Object.entries({ bold, italic, boldItalic })) {
-      if (!isFontBytes(value)) throw new TypeError(`font.${name} must be TrueType font bytes`)
+      if (!isFontBytes(value)) throw invalid(`font.${name} must be TrueType font bytes`)
     }
     return [regular, bold, italic, boldItalic]
   }
-  throw new TypeError(
+  throw invalid(
     'font must be a family name, TrueType font bytes, or { regular, bold, italic, boldItalic }'
   )
 }
@@ -63,7 +65,7 @@ function pageSize(size, landscape) {
   if (typeof size === 'string') {
     dimensions = PAGE_SIZES[size]
     if (!dimensions) {
-      throw new TypeError(
+      throw invalid(
         `pageSize must be ${Object.keys(PAGE_SIZES).join(', ')} or [width, height], got '${size}'`
       )
     }
@@ -73,7 +75,7 @@ function pageSize(size, landscape) {
     dimensions.length !== 2 ||
     !dimensions.every((n) => typeof n === 'number' && n >= 72 && n <= 14400)
   ) {
-    throw new TypeError('pageSize must be a name or [width, height] in points, each 72 to 14400')
+    throw invalid('pageSize must be a name or [width, height] in points, each 72 to 14400')
   }
   const [width, height] = dimensions
   return landscape ? [Math.max(width, height), Math.min(width, height)] : [width, height]
@@ -174,10 +176,10 @@ function toRuns(value, where) {
     return value.map((run) => {
       if (typeof run === 'string') return { text: run }
       if (run && typeof run.text === 'string') return run
-      throw new TypeError(`${where} runs must be strings or { text, bold, italic, code }`)
+      throw invalid(`${where} runs must be strings or { text, bold, italic, code }`)
     })
   }
-  throw new TypeError(`${where} must be a string or an array of runs`)
+  throw invalid(`${where} must be a string or an array of runs`)
 }
 
 const LIST_ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/
@@ -415,12 +417,13 @@ function jpegSize(bytes) {
 let png = null
 
 function decodeImage(bytes) {
-  if (!ArrayBuffer.isView(bytes)) throw new TypeError('image data must be PNG or JPEG bytes')
+  if (!ArrayBuffer.isView(bytes)) throw failure('IMAGE', 'image data must be PNG or JPEG bytes')
   const data = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 
   if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
     const size = jpegSize(data)
-    if (!size || !size.width || !size.height) throw new TypeError('JPEG image has no readable size')
+    if (!size || !size.width || !size.height)
+      throw failure('IMAGE', 'JPEG image has no readable size')
     return { jpeg: 1, data, pixelWidth: size.width, pixelHeight: size.height }
   }
 
@@ -428,11 +431,12 @@ function decodeImage(bytes) {
     png ??= require('bare-png')
     const decoded = png.decode(data)
     const pixels = decoded.width * decoded.height
-    if (decoded.data.length !== pixels * 4) throw new TypeError('PNG image did not decode to RGBA')
+    if (decoded.data.length !== pixels * 4)
+      throw failure('IMAGE', 'PNG image did not decode to RGBA')
     return { jpeg: 0, data: decoded.data, pixelWidth: decoded.width, pixelHeight: decoded.height }
   }
 
-  throw new TypeError('image data must be PNG or JPEG bytes')
+  throw failure('IMAGE', 'image data must be PNG or JPEG bytes')
 }
 
 class Layout {
@@ -447,13 +451,12 @@ class Layout {
       pageNumbers = false
     } = opts
 
-    if (typeof margin !== 'number' || margin < 0)
-      throw new TypeError('margin must be a number of points')
+    if (typeof margin !== 'number' || margin < 0) throw invalid('margin must be a number of points')
     if (typeof fontSize !== 'number' || fontSize < 4 || fontSize > 72) {
-      throw new TypeError('fontSize must be between 4 and 72 points')
+      throw invalid('fontSize must be between 4 and 72 points')
     }
     if (typeof lineHeight !== 'number' || lineHeight < 1 || lineHeight > 3) {
-      throw new TypeError('lineHeight must be between 1 and 3')
+      throw invalid('lineHeight must be between 1 and 3')
     }
 
     this.doc = doc
@@ -463,7 +466,7 @@ class Layout {
     this.contentWidth = this.width - 2 * margin
     this.contentHeight = this.height - 2 * margin
     if (this.contentWidth < 72 || this.contentHeight < 72)
-      throw new TypeError('margin leaves no room on the page')
+      throw invalid('margin leaves no room on the page')
 
     this.size = fontSize
     this.leading = lineHeight
@@ -744,7 +747,7 @@ class Layout {
   heading(block, next) {
     const level = block.level ?? 1
     if (!Number.isInteger(level) || level < 1 || level > 6)
-      throw new TypeError('heading level must be 1 to 6')
+      throw invalid('heading level must be 1 to 6')
     const size = this.size * HEADING_SCALE[level - 1]
     const runs = toRuns(block.text, 'heading text').map((run) => ({ ...run, bold: true }))
     const gap = size * 0.35
@@ -763,13 +766,13 @@ class Layout {
   }
 
   list(block, level = 0) {
-    if (!Array.isArray(block.items)) throw new TypeError('list items must be an array')
+    if (!Array.isArray(block.items)) throw invalid('list items must be an array')
     const indent = level * 18
     const marker = 16
     block.items.forEach((entry, i) => {
       const item = typeof entry === 'string' || Array.isArray(entry) ? { text: entry } : entry
       if (!item || item.text === undefined)
-        throw new TypeError('list items must be strings or { text, items }')
+        throw invalid('list items must be strings or { text, items }')
       const label = block.ordered ? `${(block.start ?? 1) + i}.` : level % 2 ? '–' : '•'
       const labelFont = this.fonts[0]
       this.text(toRuns(item.text, 'list item'), {
@@ -820,7 +823,7 @@ class Layout {
   }
 
   code(block) {
-    if (typeof block.text !== 'string') throw new TypeError('code text must be a string')
+    if (typeof block.text !== 'string') throw invalid('code text must be a string')
     const size = this.size * 0.9
     const pad = 6
     const lineHeight = this.lineHeight(size)
@@ -904,9 +907,9 @@ class Layout {
           toRuns(cell, 'table cell').map((run) => ({ ...run, bold: true }))
         )
       : null
-    if (!Array.isArray(block.rows)) throw new TypeError('table rows must be an array of arrays')
+    if (!Array.isArray(block.rows)) throw invalid('table rows must be an array of arrays')
     const rows = block.rows.map((row) => {
-      if (!Array.isArray(row)) throw new TypeError('table rows must be an array of arrays')
+      if (!Array.isArray(row)) throw invalid('table rows must be an array of arrays')
       return row.map((cell) => toRuns(cell ?? '', 'table cell'))
     })
     const columns = Math.max(header ? header.length : 0, ...rows.map((row) => row.length))
@@ -998,7 +1001,7 @@ class Layout {
 
   block(block, next) {
     if (!block || !BLOCK_TYPES.has(block.type)) {
-      throw new TypeError(
+      throw invalid(
         `block type must be one of ${[...BLOCK_TYPES].join(', ')}, got '${block && block.type}'`
       )
     }
@@ -1037,7 +1040,7 @@ module.exports = function compose(doc, content, opts, prepareText) {
   let blocks
   if (typeof content === 'string') blocks = parseMarkdown(content)
   else if (Array.isArray(content)) blocks = content
-  else throw new TypeError('content must be a Markdown string or an array of blocks')
+  else throw invalid('content must be a Markdown string or an array of blocks')
 
   const layout = new Layout(doc, opts, prepareText)
   blocks.forEach((block, i) => layout.block(block, blocks[i + 1]))

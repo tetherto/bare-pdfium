@@ -461,3 +461,41 @@ test('compose moves a heading when the gap under it leaves room for one line', (
   t.absent(pages[0].includes('Stranded?'), 'the heading is not left at the foot of the page')
   t.alike(pages[1], ['Stranded?', 'x1', 'x2', 'x3'])
 })
+
+test('compose and draw errors carry a code', (t) => {
+  const code = (fn) => {
+    try {
+      fn()
+    } catch (err) {
+      return err.code
+    }
+    return null
+  }
+  t.is(
+    code(() => pdfium.compose([{ type: 'chart' }])),
+    'INVALID_ARGUMENT'
+  )
+  t.is(
+    code(() => pdfium.compose('Tokyo 東京')),
+    'UNSUPPORTED_TEXT'
+  )
+  t.is(
+    code(() => pdfium.compose([{ type: 'image', data: Buffer.from('nope') }])),
+    'IMAGE'
+  )
+  const doc = pdfium.create()
+  doc.addPage()
+  t.is(
+    code(() => doc.measureText('x', 7, 10)),
+    'FONT'
+  )
+  t.is(
+    code(() => doc.draw(4, [])),
+    'PAGE_RANGE'
+  )
+  t.is(
+    code(() => doc.draw(0, [{ type: 'text', text: 'x', font: 9, x: 0, y: 0 }])),
+    'FONT'
+  )
+  doc.close()
+})

@@ -1,10 +1,11 @@
+const { invalid, outOfRange, failure, unsupportedText } = require('./errors')
 const binding = require('./binding')
 
 let encryptPdf = null
 
 function encrypted(data, encrypt) {
   if (encrypt === undefined || encrypt === null) return data
-  if (typeof encrypt !== 'object') throw new TypeError('encrypt must be an object with a password')
+  if (typeof encrypt !== 'object') throw invalid('encrypt must be an object with a password')
   encryptPdf ??= require('./encrypt')
   return encryptPdf(data, encrypt)
 }
@@ -20,7 +21,7 @@ function serialize(job) {
 function textOptions(opts) {
   const { clip = false, hyphens = 'join' } = opts
   if (hyphens !== 'join' && hyphens !== 'keep' && hyphens !== 'raw') {
-    throw new TypeError(`hyphens must be 'join', 'keep' or 'raw', got '${hyphens}'`)
+    throw invalid(`hyphens must be 'join', 'keep' or 'raw', got '${hyphens}'`)
   }
   return { clip: clip === true, hyphens }
 }
@@ -32,7 +33,7 @@ function applyHyphens(text, hyphens) {
 }
 
 function closedError() {
-  return Promise.reject(new Error('document is closed'))
+  return Promise.reject(failure('CLOSED', 'document is closed'))
 }
 
 const STANDARD_FONTS = new Set([
@@ -182,7 +183,7 @@ function standardText(text) {
       .slice(0, 5)
       .map((ch) => `'${ch}' (U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')})`)
       .join(', ')
-    throw new TypeError(
+    throw unsupportedText(
       `${named}${missing.length > 5 ? ' and more' : ''} cannot be drawn by the built-in fonts; pass a TrueType font that covers them`
     )
   }
@@ -209,10 +210,13 @@ function color(value, opacity = 1, where = 'color') {
 
 function pageList(count, pages) {
   if (pages === undefined) return Int32Array.from({ length: count }, (_, i) => i)
-  if (!Array.isArray(pages)) throw new TypeError('pages must be an array of page indexes')
+  if (!Array.isArray(pages)) throw invalid('pages must be an array of page indexes')
   for (const page of pages) {
     if (!Number.isInteger(page) || page < 0 || page >= count) {
-      throw new RangeError(`page ${page} is out of range; the document has ${count} pages`)
+      throw outOfRange(
+        `page ${page} is out of range; the document has ${count} pages`,
+        'PAGE_RANGE'
+      )
     }
   }
   return Int32Array.from(pages)
@@ -220,21 +224,21 @@ function pageList(count, pages) {
 
 function quarterTurns(degrees) {
   if (!Number.isInteger(degrees) || degrees % 90 !== 0) {
-    throw new TypeError(`degrees must be a multiple of 90, got ${degrees}`)
+    throw invalid(`degrees must be a multiple of 90, got ${degrees}`)
   }
   return (degrees / 90) % 4
 }
 
 function packColor(color, opacity, where = 'color') {
   if (!Array.isArray(color) || color.length !== 3) {
-    throw new TypeError(`${where} must be [r, g, b] with each channel 0-255`)
+    throw invalid(`${where} must be [r, g, b] with each channel 0-255`)
   }
   if (typeof opacity !== 'number' || opacity < 0 || opacity > 1) {
-    throw new TypeError(`opacity must be between 0 and 1, got ${opacity}`)
+    throw invalid(`opacity must be between 0 and 1, got ${opacity}`)
   }
   const channels = [...color, Math.round(opacity * 255)].map((channel) => {
     if (!Number.isInteger(channel) || channel < 0 || channel > 255) {
-      throw new TypeError(`${where} must be [r, g, b] with each channel 0-255`)
+      throw invalid(`${where} must be [r, g, b] with each channel 0-255`)
     }
     return channel
   })
@@ -295,18 +299,18 @@ function queue(args, call) {
 function drawItem(item) {
   const kind = item && DRAW_KINDS[item.type]
   if (kind === undefined) {
-    throw new TypeError(`draw items must have a type of ${Object.keys(DRAW_KINDS).join(', ')}`)
+    throw invalid(`draw items must have a type of ${Object.keys(DRAW_KINDS).join(', ')}`)
   }
   const number = (name, value, fallback) => {
     if (value === undefined && fallback !== undefined) return fallback
     if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new TypeError(`${item.type} ${name} must be a number`)
+      throw invalid(`${item.type} ${name} must be a number`)
     }
     return value
   }
 
   if (item.type === 'text') {
-    if (typeof item.text !== 'string') throw new TypeError('text items need a string text')
+    if (typeof item.text !== 'string') throw invalid('text items need a string text')
     return {
       kind,
       text: item.text,
@@ -358,17 +362,18 @@ function drawItem(item) {
 function prepareFill(list, values) {
   const fields = new Map(list.map((field) => [field.name, field]))
   const names = Object.keys(values)
-  if (names.length === 0) throw new TypeError('pass at least one field to fill')
+  if (names.length === 0) throw invalid('pass at least one field to fill')
 
   const filled = names.map((name) => {
     const field = fields.get(name)
     if (!field) {
       const known = [...fields.keys()]
-      throw new Error(
-        known.length
-          ? `no field named '${name}'; the form has ${JSON.stringify(known)}`
-          : 'the document has no form fields'
-      )
+      throw known.length
+        ? failure(
+            'FIELD_NOT_FOUND',
+            `no field named '${name}'; the form has ${JSON.stringify(known)}`
+          )
+        : failure('NO_FORM', 'the document has no form fields')
     }
     return fillValue(field, values[name])
   })
@@ -380,7 +385,10 @@ function checkFill(list, names, filled, values) {
   const after = new Map(list.map((field) => [field.name, field]))
   for (const [i, name] of names.entries()) {
     if (!sameValue(after.get(name), filled[i])) {
-      throw new Error(`field '${name}' did not take the value ${JSON.stringify(values[name])}`)
+      throw failure(
+        'FIELD_REJECTED',
+        `field '${name}' did not take the value ${JSON.stringify(values[name])}`
+      )
     }
   }
   return names.map((name) => after.get(name))
@@ -400,11 +408,11 @@ function sameValue(field, value) {
 function fillValue(field, value) {
   const { name, type } = field
 
-  if (field.readOnly) throw new Error(`field '${name}' is read-only`)
+  if (field.readOnly) throw failure('FIELD_READ_ONLY', `field '${name}' is read-only`)
 
   if (type === 'text') {
     if (typeof value === 'number') value = String(value)
-    if (typeof value !== 'string') throw new TypeError(`field '${name}' is text; pass a string`)
+    if (typeof value !== 'string') throw invalid(`field '${name}' is text; pass a string`)
     return value
   }
 
@@ -413,12 +421,12 @@ function fillValue(field, value) {
     if (typeof value === 'string' && (value === 'Off' || (field.options || []).includes(value))) {
       return value
     }
-    throw new TypeError(`field '${name}' is a checkbox; pass true or false`)
+    throw invalid(`field '${name}' is a checkbox; pass true or false`)
   }
 
   if (type === 'radio') {
     if (!field.options.includes(value)) {
-      throw new TypeError(
+      throw invalid(
         `field '${name}' is a radio group; pass one of ${JSON.stringify(field.options)}`
       )
     }
@@ -426,27 +434,26 @@ function fillValue(field, value) {
   }
 
   if (type === 'combobox') {
-    if (typeof value !== 'string')
-      throw new TypeError(`field '${name}' is a dropdown; pass a string`)
+    if (typeof value !== 'string') throw invalid(`field '${name}' is a dropdown; pass a string`)
     if (field.options.includes(value)) return [value]
     if (field.editable) return value
-    throw new TypeError(`field '${name}' accepts one of ${JSON.stringify(field.options)}`)
+    throw invalid(`field '${name}' accepts one of ${JSON.stringify(field.options)}`)
   }
 
   if (type === 'listbox') {
     const items = Array.isArray(value) ? value : [value]
     if (!field.multiSelect && items.length > 1) {
-      throw new TypeError(`field '${name}' takes a single selection`)
+      throw invalid(`field '${name}' takes a single selection`)
     }
     for (const item of items) {
       if (!field.options.includes(item)) {
-        throw new TypeError(`field '${name}' accepts ${JSON.stringify(field.options)}`)
+        throw invalid(`field '${name}' accepts ${JSON.stringify(field.options)}`)
       }
     }
     return items
   }
 
-  throw new Error(`field '${name}' is a ${type} and cannot be filled`)
+  throw failure('FIELD_TYPE', `field '${name}' is a ${type} and cannot be filled`)
 }
 
 // An open PDF. Loading parses the whole file once; every page operation reuses
@@ -533,7 +540,7 @@ class Doc {
   }
 
   _open() {
-    if (!this._handle) throw new Error('document is closed')
+    if (!this._handle) throw failure('CLOSED', 'document is closed')
     return this._handle
   }
 
@@ -542,7 +549,7 @@ class Doc {
     const from = source._open()
     const { pages, at = -1 } = opts
     if (!Number.isInteger(at) || at < -1 || at > this.pageCount()) {
-      throw new RangeError(`at must be a page index from 0 to ${this.pageCount()}, got ${at}`)
+      throw outOfRange(`at must be a page index from 0 to ${this.pageCount()}, got ${at}`)
     }
     return [handle, from, pageList(source.pageCount(), pages), at]
   }
@@ -581,13 +588,13 @@ class Doc {
       font = null
     } = opts
     if (typeof text !== 'string' || text.length === 0) {
-      throw new TypeError('watermark text must be a non-empty string')
+      throw invalid('watermark text must be a non-empty string')
     }
     if (position !== 'over' && position !== 'under') {
-      throw new TypeError(`position must be 'over' or 'under', got '${position}'`)
+      throw invalid(`position must be 'over' or 'under', got '${position}'`)
     }
     const drawable = prepareText(text, font === null).trim()
-    if (!drawable) throw new TypeError('watermark text has nothing that can be drawn')
+    if (!drawable) throw invalid('watermark text has nothing that can be drawn')
     return [
       handle,
       pageList(this.pageCount(), pages),
@@ -640,11 +647,11 @@ class Doc {
     const { width = 595.28, height = 841.89, at = count } = opts
     for (const [name, value] of Object.entries({ width, height })) {
       if (typeof value !== 'number' || value < 1 || value > 14400) {
-        throw new RangeError(`${name} must be 1 to 14400 points, got ${value}`)
+        throw outOfRange(`${name} must be 1 to 14400 points, got ${value}`)
       }
     }
     if (!Number.isInteger(at) || at < 0 || at > count) {
-      throw new RangeError(`at must be a page index from 0 to ${count}, got ${at}`)
+      throw outOfRange(`at must be a page index from 0 to ${count}, got ${at}`)
     }
     binding.newPage(handle, at, width, height)
     return at
@@ -654,18 +661,18 @@ class Doc {
     const handle = this._open()
     if (typeof font === 'string') {
       if (!STANDARD_FONTS.has(font)) {
-        throw new TypeError(
+        throw invalid(
           `font must be TrueType bytes or a built-in font name: ${[...STANDARD_FONTS].join(', ')}`
         )
       }
     } else if (!ArrayBuffer.isView(font) || font.byteLength === 0) {
-      throw new TypeError('font must be TrueType bytes or a built-in font name')
+      throw invalid('font must be TrueType bytes or a built-in font name')
     }
     return binding.loadFont(handle, font)
   }
 
   measureText(text, font, size) {
-    if (typeof text !== 'string') throw new TypeError('text must be a string')
+    if (typeof text !== 'string') throw invalid('text must be a string')
     return (binding.measure(this._open(), font, text) * size) / 1000
   }
 
@@ -678,9 +685,12 @@ class Doc {
     const handle = this._open()
     const count = this.pageCount()
     if (!Number.isInteger(page) || page < 0 || page >= count) {
-      throw new RangeError(`page ${page} is out of range; the document has ${count} pages`)
+      throw outOfRange(
+        `page ${page} is out of range; the document has ${count} pages`,
+        'PAGE_RANGE'
+      )
     }
-    if (!Array.isArray(items)) throw new TypeError('draw takes an array of items')
+    if (!Array.isArray(items)) throw invalid('draw takes an array of items')
     return [handle, page, items.map(drawItem)]
   }
 
@@ -768,7 +778,7 @@ function edit(pdf, opts, fn) {
 }
 
 exports.merge = function merge(pdfs) {
-  if (!Array.isArray(pdfs) || pdfs.length === 0) throw new TypeError('merge takes an array of PDFs')
+  if (!Array.isArray(pdfs) || pdfs.length === 0) throw invalid('merge takes an array of PDFs')
   const merged = exports.create()
   try {
     for (const pdf of pdfs) edit(pdf, {}, (doc) => merged.importPages(doc))
@@ -855,7 +865,7 @@ async function editAsync(pdf, opts, fn) {
 }
 
 exports.mergeAsync = async function mergeAsync(pdfs) {
-  if (!Array.isArray(pdfs) || pdfs.length === 0) throw new TypeError('merge takes an array of PDFs')
+  if (!Array.isArray(pdfs) || pdfs.length === 0) throw invalid('merge takes an array of PDFs')
   const merged = exports.create()
   try {
     for (const pdf of pdfs) await editAsync(pdf, {}, (doc) => merged.importPagesAsync(doc))
