@@ -15,9 +15,7 @@
   "types": "./index.d.ts",
   "files": [
     "index.js",
-    "encrypt.js",
-    "errors.js",
-    "compose.js",
+    "lib",
     "index.d.ts",
     "binding.c",
     "binding.js",
