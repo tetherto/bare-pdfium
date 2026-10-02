@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  DEPOT_TOOLS_WIN_TOOLCHAIN: 0
 jobs:
   prebuild:
     strategy:

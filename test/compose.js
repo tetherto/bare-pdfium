@@ -229,8 +229,9 @@ test('compose repeats a table header on every page the table spans', (t) => {
   const pdf = pdfium.compose([{ type: 'table', header: ['Label', 'Double'], rows }])
   const pages = texts(pdf)
   t.ok(pages.length >= 3)
-  for (const page of pages)
+  for (const page of pages) {
     t.ok(page.includes('Label') && page.includes('Double'), 'header on the page')
+  }
   t.ok(pages.join('\n').includes('row 120'), 'the last row is there')
 })
 
@@ -365,8 +366,9 @@ test('compose keeps a heading with the text after it', (t) => {
     })
   }
   const pages = pageLines(pdfium.compose(blocks))
-  for (const lines of pages)
+  for (const lines of pages) {
     t.absent(/^Section \d+$/.test(lines.at(-1)), `a page ends with "${lines.at(-1)}"`)
+  }
 })
 
 test('compose draws each list bullet beside its item, across page breaks', (t) => {

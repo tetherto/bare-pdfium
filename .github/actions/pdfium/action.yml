@@ -30,7 +30,6 @@ runs:
 
         git clone --quiet https://chromium.googlesource.com/chromium/tools/depot_tools.git "$RUNNER_TEMP/depot_tools"
         export PATH="$RUNNER_TEMP/depot_tools:$PATH"
-        echo "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
 
         case "$PLATFORM" in
           darwin) os=mac ;;
@@ -65,7 +64,8 @@ runs:
         cd pdfium
         git apply bare-pdfium/patches/*.patch
 
-        flags="-D GN_DIR=$root/pdfium -D GN_OUT_DIR=$root/pdfium/out/$TARGET"
+        gn=$(find "$root/pdfium/buildtools" -mindepth 2 -maxdepth 2 -type f -name gn | head -n 1)
+        flags="-D GN_DIR=$root/pdfium -D GN_OUT_DIR=$root/pdfium/out/$TARGET -D gn=$gn"
 
         # Build the addon against the same Debian sysroot as PDFium, which also
         # lets linux-arm64 cross-compile from the x64 host Chromium's clang needs.
@@ -119,8 +119,6 @@ runs:
         $tools = Join-Path $env:RUNNER_TEMP depot_tools
         git clone --quiet https://chromium.googlesource.com/chromium/tools/depot_tools.git $tools
         $env:PATH = "$tools;$env:PATH"
-        Add-Content $env:GITHUB_PATH $tools
-        Add-Content $env:GITHUB_ENV 'DEPOT_TOOLS_WIN_TOOLCHAIN=0'
 
         $root = Join-Path $env:RUNNER_TEMP pdfium
         New-Item -ItemType Directory -Force (Join-Path $root pdfium) | Out-Null
@@ -161,4 +159,4 @@ runs:
         autoninja -C "out/$env:TARGET" pdfium
 
         $dir = (Join-Path $root pdfium) -replace '\\', '/'
-        Add-Content $env:GITHUB_OUTPUT "flags=-D GN_DIR=$dir -D GN_OUT_DIR=$dir/out/$env:TARGET"
+        Add-Content $env:GITHUB_OUTPUT "flags=-D GN_DIR=$dir -D GN_OUT_DIR=$dir/out/$env:TARGET -D gn=$dir/buildtools/win/gn.exe"

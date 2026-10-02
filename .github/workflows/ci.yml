@@ -6,7 +6,14 @@ on:
     branches: [main]
 permissions:
   contents: read
+env:
+  DEPOT_TOOLS_WIN_TOOLCHAIN: 0
 jobs:
+  security:
+    runs-on: ubuntu-latest
+    name: Security
+    steps:
+      - uses: holepunchto/actions/security-base@v1
   lint:
     runs-on: ubuntu-latest
     name: Lint
@@ -41,3 +48,24 @@ jobs:
           arch: ${{ matrix.arch }}
           flags: ${{ steps.pdfium.outputs.flags }}
       - run: npm test
+  sanitize:
+    runs-on: ubuntu-latest
+    name: Sanitize / linux
+    steps:
+      - uses: holepunchto/actions/bare-base@v1
+        with:
+          source: true
+          flags: --debug --sanitize address
+      - uses: ./.github/actions/pdfium
+        id: pdfium
+        with:
+          platform: linux
+          arch: x64
+      - uses: holepunchto/actions/compile-prebuilds@v1
+        with:
+          platform: linux
+          arch: x64
+          flags: --debug --sanitize address ${{ steps.pdfium.outputs.flags }}
+      - run: npm test
+        env:
+          LSAN_OPTIONS: suppressions=test/leaks.txt
