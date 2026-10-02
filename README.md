@@ -59,7 +59,9 @@ doc.close()
 - `render(page, { scale })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
   is 150 DPI. `data` is a row-major RGBA buffer, `width*height*4` bytes.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
-  with their transforms), each RGBA. Images under 8px are skipped.
+  with their transforms), each RGBA. Images under 8px are skipped. An image over
+  40 megapixels, or more than 160 megapixels of images on one page, throws
+  `LIMIT`; render the page with a smaller `scale` instead.
 - `extractText(page, opts)` — the page's text layer as a string, empty for a page
   with no text layer (a scan). Independent of `render`, so a consumer can take both
   the pixels and the text from the same page. Lines are separated by `\r\n`. See
@@ -148,27 +150,27 @@ try {
 Every other error carries an `err.code` too, so callers can branch without
 matching messages. Async calls reject with the same codes.
 
-| `err.code`         | meaning                                                                           |
-| ------------------ | --------------------------------------------------------------------------------- |
-| `INVALID_ARGUMENT` | an option or argument has the wrong type or value (a `TypeError` or `RangeError`) |
-| `PAGE_RANGE`       | a page index past the end of the document                                         |
-| `PAGE`             | a page, or its text layer, could not be loaded                                    |
-| `CLOSED`           | the document was closed, including before a queued async call ran                 |
-| `LIMIT`            | `render` past the 20000px-per-side guard                                          |
-| `MEMORY`           | a bitmap could not be allocated                                                   |
-| `UNSUPPORTED_TEXT` | text the built-in fonts cannot draw; pass a TrueType font                         |
-| `FONT`             | a font failed to load, or a draw item names one the document has not loaded       |
-| `IMAGE`            | image data is not a PNG or JPEG PDFium can embed                                  |
-| `IMPORT`           | pages could not be copied between documents                                       |
-| `FORM`             | the document's form could not be loaded                                           |
-| `NO_FORM`          | the document has no form fields                                                   |
-| `FIELD_NOT_FOUND`  | `fillFields` names a field the form does not have                                 |
-| `FIELD_READ_ONLY`  | the field is read-only                                                            |
-| `FIELD_TYPE`       | the field is a button or signature, which cannot be filled                        |
-| `FIELD_REJECTED`   | the field did not take the value when read back                                   |
-| `SAVE`             | PDFium could not write the document                                               |
-| `ENCRYPT`          | the saved PDF could not be encrypted                                              |
-| `EDIT`             | PDFium refused an edit (a page, text object or shape could not be created)        |
+| `err.code`         | meaning                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `INVALID_ARGUMENT` | an option or argument has the wrong type or value (a `TypeError` or `RangeError`)                            |
+| `PAGE_RANGE`       | a page index past the end of the document                                                                    |
+| `PAGE`             | a page, or its text layer, could not be loaded                                                               |
+| `CLOSED`           | the document was closed, including before a queued async call ran                                            |
+| `LIMIT`            | `render` past 20000 px per side or 40 MP, or `extractImages` past 40 MP for one image or 160 MP for the page |
+| `MEMORY`           | a bitmap could not be allocated                                                                              |
+| `UNSUPPORTED_TEXT` | text the font cannot draw: outside the built-in fonts, or missing from a TrueType                            |
+| `FONT`             | a font failed to load, or a draw item names one the document has not loaded                                  |
+| `IMAGE`            | image data is not a PNG or JPEG PDFium can embed                                                             |
+| `IMPORT`           | pages could not be copied between documents                                                                  |
+| `FORM`             | the document's form could not be loaded                                                                      |
+| `NO_FORM`          | the document has no form fields                                                                              |
+| `FIELD_NOT_FOUND`  | `fillFields` names a field the form does not have                                                            |
+| `FIELD_READ_ONLY`  | the field is read-only                                                                                       |
+| `FIELD_TYPE`       | the field is a button or signature, which cannot be filled                                                   |
+| `FIELD_REJECTED`   | the field did not take the value when read back                                                              |
+| `SAVE`             | PDFium could not write the document                                                                          |
+| `ENCRYPT`          | the saved PDF could not be encrypted                                                                         |
+| `EDIT`             | PDFium refused an edit (a page, text object or shape could not be created)                                   |
 
 ### Lifetime
 
@@ -227,7 +229,9 @@ doc.save({
 ```
 
 - `pages` — zero-based page indexes. Omitted, an edit applies to every page.
-  An index out of range throws a `RangeError` before anything changes.
+  An index out of range throws a `RangeError` before anything changes, and an
+  empty list or one with holes throws `INVALID_ARGUMENT`. A page listed twice,
+  or reached twice through the page tree, is rotated or stamped once.
 - `watermark(text, opts)`:
 
   | option     | default           | effect                                                         |
@@ -242,10 +246,13 @@ doc.save({
 
   `'under'` is hidden by any page that paints an opaque background, such as a
   scan, so the default is `'over'` with some transparency. The page's content
-  stream is regenerated to add the stamp.
+  stream is regenerated to add the stamp. With a `font`, every letter and
+  digit must be in its character map, or the call throws `UNSUPPORTED_TEXT`.
 
 - `fields()` — one entry per form field, merged across its widgets. `value` is
-  a string for text fields and dropdowns, a boolean for checkboxes, the chosen
+  a string for text fields and dropdowns (the label of the chosen option, or
+  `null` when nothing is chosen), a boolean for checkboxes (or the chosen
+  export value, with `options`, for a checkbox group with several), the chosen
   option for a radio group (`null` when none is), and an array for a
   multi-select list. Radio groups, dropdowns and lists carry their `options`.
   A document with no form returns `[]`.
@@ -256,7 +263,13 @@ doc.save({
   before anything changes, with a message naming what the field accepts. The
   fields are filled through PDFium's form engine, so their appearance is
   regenerated as a viewer would draw it, and each value is read back afterwards;
-  a field that did not take its value throws. Returns the filled fields.
+  a field that did not take its value throws `FIELD_REJECTED`, and every
+  field in the call goes back to its earlier value. PDFium cannot clear a radio
+  group or a fixed dropdown, so when a call sets one of these that is empty,
+  together with other fields, the fill first runs on a copy of the document,
+  and the document is only changed if every field takes its value. Text cannot hold NUL, and
+  characters outside the Basic Multilingual Plane such as emoji throw
+  `UNSUPPORTED_TEXT`. Returns the filled fields.
 - `save()` keeps the document's encryption. To decrypt, open with the password
   and save with `removeSecurity: true`.
 - `save({ encrypt })` locks the saved PDF with AES-256 (PDF 2.0 security handler,
@@ -272,10 +285,13 @@ doc.save({
   | `permissions`   | all allowed | set any of these to `false` to restrict it: `print`, `modify`, `copy`, `annotate`, `fillForms`, `assemble`, `printHighQuality` |
 
   Without an `ownerPassword` a random one is used, so the limits cannot be
-  lifted; an empty `password` therefore needs one. Readers honour permissions
-  voluntarily, so they restrict what a viewer offers rather than protect the
-  content. Passwords longer than 127 bytes of UTF-8 are truncated, as the
-  standard requires. In `saveAsync` the save runs on the worker and the
+  lifted; an empty `password` therefore needs one. An empty `ownerPassword`,
+  or one equal to `password`, throws, since either would hand out owner
+  rights. Readers honour permissions voluntarily, so they restrict what a
+  viewer offers rather than protect the content. Passwords are prepared with
+  SASLprep and cut to 127 bytes of UTF-8 at a character boundary, as the
+  standard requires, and `open` applies the same steps, so `ﬁ` opens a file
+  locked with `fi`. A password with a NUL character throws. In `saveAsync` the save runs on the worker and the
   encryption on the calling thread.
 
 The one-shot forms open the input, apply one edit and return the saved PDF:
@@ -293,6 +309,10 @@ pdfium.fillFields(bytes, { name: 'Ada Lovelace' })
 
 Every one-shot but `merge`, `decrypt` and `encrypt` takes `password` in its options for an
 encrypted input.
+
+`merge`, `extractPages` and `importPages` copy each page with its widgets, but
+not the document's form (`/AcroForm`), so the copied fields no longer show up
+in `fields()` and cannot be filled. Fill the form before copying pages.
 
 Each edit also has an async form that runs on a libuv worker thread, the same way
 `renderAsync` does: `importPagesAsync`, `rotateAsync`, `watermarkAsync`,
@@ -441,8 +461,13 @@ and for android also `"checkout_android": True` to its `custom_vars`. On Windows
 use a junction (`mklink /j`) instead of `ln -s` and set
 `DEPOT_TOOLS_WIN_TOOLCHAIN=0`.
 
-Then apply the patches in [`patches/`](patches), which fix PDFium's standalone
-build for targets it does not build itself, and build PDFium for a target from
+Then apply the patches in [`patches/`](patches). Two fix PDFium's standalone
+build for targets it does not build itself. `encrypt-metadata` encrypts the
+XMP `/Metadata` stream when an encrypted document is saved, which PDFium skips.
+`form-expansion-budget` caps the form XObjects one page may expand to 100000,
+since a self-referencing form otherwise grows exponentially within PDFium's
+nesting limit. `page-object-number` adds `FPDFPage_GetObjectNumber`, which
+lets edits find a page listed twice in the page tree. Then build PDFium for a target from
 [`gn/target/`](gn/target). Revert the patches with `git apply --reverse` before the next
 `gclient sync`, which needs a clean tree:
 

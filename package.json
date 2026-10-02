@@ -33,7 +33,7 @@
   "scripts": {
     "format": "prettier --write . && lunte --fix",
     "lint": "prettier --check . && lunte",
-    "test": "brittle-bare --coverage test.js test/compose.js test/render.js"
+    "test": "brittle-bare --coverage test.js test/compose.js test/hardening.js test/render.js"
   },
   "repository": {
     "type": "git",

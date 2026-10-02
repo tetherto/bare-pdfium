@@ -31,6 +31,8 @@ static uv_mutex_t bare_pdfium_lock_mutex;
 // Rendering a page at an absurd scale would allocate gigabytes; cap each side.
 static const int BARE_PDFIUM_MAX_DIM = 20000;
 
+static const int64_t BARE_PDFIUM_MAX_PIXELS = 40000000;
+
 // An image object covering less than this fraction of the page is treated as
 // decoration (a logo/rule), not content, when classifying a page.
 static const double BARE_PDFIUM_MIN_IMAGE_FRACTION = 0.05;
@@ -44,6 +46,8 @@ static const int BARE_PDFIUM_MIN_IMAGE_PX = 8;
   V(PAGE, "PAGE", "failed to load page") \
   V(TEXT_PAGE, "PAGE", "failed to load text page") \
   V(LIMIT, "LIMIT", "rendered dimensions exceed limit") \
+  V(IMAGE_LIMIT, "LIMIT", "an image on the page is over 40 megapixels; render the page instead") \
+  V(IMAGES_LIMIT, "LIMIT", "the images on the page exceed 160 megapixels; extract fewer or render the page") \
   V(MEMORY, "MEMORY", "failed to allocate bitmap") \
   V(FILE_OPEN, "FILE", "failed to open file") \
   V(FILE_SIZE, "FILE", "failed to size file") \
@@ -323,9 +327,15 @@ bare_pdfium__get_block(void *param, unsigned long position, unsigned char *buf, 
 static bare_pdfium_doc_t *
 bare_pdfium__handle(js_env_t *env, js_value_t *value) {
   bare_pdfium_doc_t *handle = NULL;
-  int err = js_get_value_external(env, value, (void **) &handle);
-  assert(err == 0);
+  if (js_get_value_external(env, value, (void **) &handle) != 0) return NULL;
   return handle;
+}
+
+static bool
+bare_pdfium__usable(js_env_t *env, bare_pdfium_doc_t *handle) {
+  if (handle && handle->doc) return true;
+  bare_pdfium__throw(env, BARE_PDFIUM_E_CLOSED);
+  return false;
 }
 
 static void
@@ -461,7 +471,7 @@ bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_p
   if (width < 1) width = 1;
   if (height < 1) height = 1;
 
-  if (width > BARE_PDFIUM_MAX_DIM || height > BARE_PDFIUM_MAX_DIM) {
+  if (width > BARE_PDFIUM_MAX_DIM || height > BARE_PDFIUM_MAX_DIM || (int64_t) width * height > BARE_PDFIUM_MAX_PIXELS) {
     FPDF_ClosePage(page);
     return BARE_PDFIUM_E_LIMIT;
   }
@@ -684,6 +694,7 @@ bare_pdfium_page_count(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   bare_pdfium__lock();
   int count = FPDF_GetPageCount(handle->doc);
@@ -707,6 +718,7 @@ bare_pdfium_page_size(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int64_t page_index;
   err = js_get_value_int64(env, argv[1], &page_index);
@@ -717,7 +729,7 @@ bare_pdfium_page_size(js_env_t *env, js_callback_info_t *info) {
   bool found = FPDF_GetPageSizeByIndexF(handle->doc, (int) page_index, &size);
   bare_pdfium__unlock();
   if (!found) {
-    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE_RANGE);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE);
     return NULL;
   }
 
@@ -751,6 +763,7 @@ bare_pdfium_page_flags(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int64_t page_index;
   err = js_get_value_int64(env, argv[1], &page_index);
@@ -811,6 +824,7 @@ bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int64_t page_index;
   err = js_get_value_int64(env, argv[1], &page_index);
@@ -844,6 +858,7 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int64_t page_index;
   err = js_get_value_int64(env, argv[1], &page_index);
@@ -862,12 +877,29 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   bare_pdfium_raster_t *images = objects > 0 ? malloc(sizeof(bare_pdfium_raster_t) * (size_t) objects) : NULL;
   const char *error = objects > 0 && images == NULL ? BARE_PDFIUM_E_MEMORY : NULL;
   uint32_t count = 0;
+  int64_t total = 0;
   for (int i = 0; error == NULL && i < objects; i++) {
     FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, i);
     if (FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_IMAGE) continue;
 
+    unsigned int source_width = 0, source_height = 0;
+    if (!FPDFImageObj_GetImagePixelSize(object, &source_width, &source_height)) continue;
+    int64_t source_pixels = (int64_t) source_width * source_height;
+    if (source_pixels > BARE_PDFIUM_MAX_PIXELS) {
+      error = BARE_PDFIUM_E_IMAGE_LIMIT;
+      break;
+    }
+
     FPDF_BITMAP bitmap = FPDFImageObj_GetRenderedBitmap(handle->doc, page, object);
     if (bitmap == NULL) continue;
+
+    int64_t pixels = (int64_t) FPDFBitmap_GetWidth(bitmap) * FPDFBitmap_GetHeight(bitmap);
+    total += pixels;
+    if (pixels > BARE_PDFIUM_MAX_PIXELS || total > BARE_PDFIUM_MAX_PIXELS * 4) {
+      FPDFBitmap_Destroy(bitmap);
+      error = pixels > BARE_PDFIUM_MAX_PIXELS ? BARE_PDFIUM_E_IMAGE_LIMIT : BARE_PDFIUM_E_IMAGES_LIMIT;
+      break;
+    }
 
     if (FPDFBitmap_GetWidth(bitmap) < BARE_PDFIUM_MIN_IMAGE_PX || FPDFBitmap_GetHeight(bitmap) < BARE_PDFIUM_MIN_IMAGE_PX) {
       FPDFBitmap_Destroy(bitmap);
@@ -918,6 +950,7 @@ bare_pdfium_extract_text(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int64_t page_index;
   err = js_get_value_int64(env, argv[1], &page_index);
@@ -1032,6 +1065,11 @@ bare_pdfium_extract_text_async(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_int64(env, argv[1], &page_index);
   assert(err == 0);
 
+  if (bare_pdfium__handle(env, argv[0]) == NULL) {
+    bare_pdfium__throw(env, BARE_PDFIUM_E_CLOSED);
+    return NULL;
+  }
+
   bare_pdfium_job_t *job;
   js_value_t *promise = bare_pdfium__queue_job(env, argv[0], page_index, &job);
 
@@ -1088,6 +1126,11 @@ bare_pdfium_render_async(js_env_t *env, js_callback_info_t *info) {
   int64_t page_index;
   err = js_get_value_int64(env, argv[1], &page_index);
   assert(err == 0);
+
+  if (bare_pdfium__handle(env, argv[0]) == NULL) {
+    bare_pdfium__throw(env, BARE_PDFIUM_E_CLOSED);
+    return NULL;
+  }
 
   bare_pdfium_job_t *job;
   js_value_t *promise = bare_pdfium__queue_job(env, argv[0], page_index, &job);
@@ -1168,15 +1211,50 @@ bare_pdfium_create(js_env_t *env, js_callback_info_t *info) {
   return bare_pdfium__wrap_doc(env, handle);
 }
 
+typedef struct {
+  unsigned long *slots;
+  size_t capacity;
+} bare_pdfium_seen_t;
+
+static bool
+bare_pdfium__seen_init(bare_pdfium_seen_t *seen, size_t count) {
+  seen->capacity = 16;
+  while (seen->capacity < count * 2)
+    seen->capacity *= 2;
+  seen->slots = calloc(seen->capacity, sizeof(unsigned long));
+  return seen->slots != NULL;
+}
+
+static bool
+bare_pdfium__seen_add(bare_pdfium_seen_t *seen, unsigned long number) {
+  if (number == 0) return true;
+  size_t i = (number * 2654435761u) & (seen->capacity - 1);
+  while (seen->slots[i] != 0) {
+    if (seen->slots[i] == number) return false;
+    i = (i + 1) & (seen->capacity - 1);
+  }
+  seen->slots[i] = number;
+  return true;
+}
+
 static const char *
 bare_pdfium__rotate_pages(FPDF_DOCUMENT doc, const int *pages, size_t len, int turns) {
-  for (size_t i = 0; i < len; i++) {
+  bare_pdfium_seen_t seen;
+  if (!bare_pdfium__seen_init(&seen, len)) return BARE_PDFIUM_E_MEMORY;
+  const char *error = NULL;
+  for (size_t i = 0; i < len && error == NULL; i++) {
     FPDF_PAGE page = FPDF_LoadPage(doc, pages[i]);
-    if (page == NULL) return BARE_PDFIUM_E_PAGE;
-    FPDFPage_SetRotation(page, ((FPDFPage_GetRotation(page) + turns) % 4 + 4) % 4);
+    if (page == NULL) {
+      error = BARE_PDFIUM_E_PAGE;
+      break;
+    }
+    if (bare_pdfium__seen_add(&seen, FPDFPage_GetObjectNumber(page))) {
+      FPDFPage_SetRotation(page, ((FPDFPage_GetRotation(page) + turns) % 4 + 4) % 4);
+    }
     FPDF_ClosePage(page);
   }
-  return NULL;
+  free(seen.slots);
+  return error;
 }
 
 typedef struct {
@@ -1282,6 +1360,12 @@ bare_pdfium__watermark_pages(FPDF_DOCUMENT doc, const int *pages, size_t len, co
     if (font == NULL) return BARE_PDFIUM_E_FONT_LOAD;
   }
 
+  bare_pdfium_seen_t seen;
+  if (!bare_pdfium__seen_init(&seen, len)) {
+    if (font) FPDFFont_Close(font);
+    return BARE_PDFIUM_E_MEMORY;
+  }
+
   const char *error = NULL;
   for (size_t i = 0; i < len && error == NULL; i++) {
     FPDF_PAGE page = FPDF_LoadPage(doc, pages[i]);
@@ -1289,10 +1373,13 @@ bare_pdfium__watermark_pages(FPDF_DOCUMENT doc, const int *pages, size_t len, co
       error = BARE_PDFIUM_E_PAGE;
       break;
     }
-    error = bare_pdfium__stamp(doc, page, font, text, size, angle, color, under);
+    if (bare_pdfium__seen_add(&seen, FPDFPage_GetObjectNumber(page))) {
+      error = bare_pdfium__stamp(doc, page, font, text, size, angle, color, under);
+    }
     FPDF_ClosePage(page);
   }
 
+  free(seen.slots);
   if (font) FPDFFont_Close(font);
 
   return error;
@@ -1778,6 +1865,14 @@ typedef void (*bare_pdfium_edit_setup_fn)(js_env_t *env, js_value_t **argv, bare
 static const char *
 bare_pdfium__import_work(bare_pdfium_edit_job_t *job) {
   int at = job->number < 0 ? FPDF_GetPageCount(job->handle->doc) : job->number;
+  if (job->handle == job->source) {
+    FPDF_DOCUMENT scratch = FPDF_CreateNewDocument();
+    if (scratch == NULL) return BARE_PDFIUM_E_IMPORT;
+    bool copied = FPDF_ImportPagesByIndex(scratch, job->source->doc, job->pages, (unsigned long) job->pages_len, 0);
+    bool ok = copied && FPDF_ImportPagesByIndex(job->handle->doc, scratch, NULL, 0, at);
+    FPDF_CloseDocument(scratch);
+    return ok ? NULL : BARE_PDFIUM_E_IMPORT;
+  }
   bool ok = FPDF_ImportPagesByIndex(job->handle->doc, job->source->doc, job->pages, (unsigned long) job->pages_len, at);
   return ok ? NULL : BARE_PDFIUM_E_IMPORT;
 }
@@ -1985,7 +2080,19 @@ bare_pdfium__edit(js_env_t *env, js_callback_info_t *info, bare_pdfium_edit_setu
   job->env = env;
   job->handle = bare_pdfium__handle(env, argv[0]);
 
+  if (job->handle == NULL) {
+    free(job);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_CLOSED);
+    return NULL;
+  }
+
   setup(env, argv, job);
+
+  if (job->source_value && job->source == NULL) {
+    bare_pdfium__free_edit(job);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_CLOSED);
+    return NULL;
+  }
 
   if (!async) {
     bare_pdfium__run_edit(job);
@@ -2048,11 +2155,16 @@ bare_pdfium__property(js_env_t *env, js_value_t *object, const char *name) {
 
 static uint8_t *
 bare_pdfium__copy_bytes(js_env_t *env, js_value_t *value, size_t *len) {
+  bool is_typedarray = false;
+  *len = 0;
+  if (js_is_typedarray(env, value, &is_typedarray) != 0 || !is_typedarray) return NULL;
   void *data;
-  int err = js_get_typedarray_info(env, value, NULL, &data, len, NULL, NULL);
-  assert(err == 0);
-  uint8_t *copy = malloc(*len ? *len : 1);
-  memcpy(copy, data, *len);
+  js_typedarray_type_t type;
+  size_t count;
+  if (js_get_typedarray_info(env, value, &type, &data, &count, NULL, NULL) != 0 || type != js_uint8array) return NULL;
+  *len = count;
+  uint8_t *copy = malloc(count ? count : 1);
+  if (copy && count) memcpy(copy, data, count);
   return copy;
 }
 
@@ -2080,6 +2192,12 @@ bare_pdfium__set_colors(FPDF_PAGEOBJECT object, uint32_t fill, uint32_t stroke, 
 
 static FPDF_PAGEOBJECT
 bare_pdfium__draw_image(FPDF_DOCUMENT doc, FPDF_PAGE page, const bare_pdfium_draw_item_t *item) {
+  if (item->data == NULL || item->data_len == 0) return NULL;
+  if (!item->jpeg) {
+    if (item->pixel_width <= 0 || item->pixel_height <= 0) return NULL;
+    int64_t pixels = (int64_t) item->pixel_width * item->pixel_height;
+    if (pixels > BARE_PDFIUM_MAX_PIXELS || (size_t) pixels * 4 > item->data_len) return NULL;
+  }
   FPDF_PAGEOBJECT object = FPDFPageObj_NewImageObj(doc);
   if (object == NULL) return NULL;
 
@@ -2252,6 +2370,7 @@ bare_pdfium_new_page(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int32_t index;
   err = js_get_value_int32(env, argv[1], &index);
@@ -2284,6 +2403,7 @@ bare_pdfium_load_font(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   bool is_bytes;
   err = js_is_typedarray(env, argv[1], &is_bytes);
@@ -2343,6 +2463,7 @@ bare_pdfium_measure(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int32_t index;
   err = js_get_value_int32(env, argv[1], &index);
@@ -2393,6 +2514,7 @@ bare_pdfium_font_metrics(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
 
   int32_t index;
   err = js_get_value_int32(env, argv[1], &index);
