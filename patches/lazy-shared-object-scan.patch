@@ -1,0 +1,73 @@
+diff --git a/core/fpdfapi/edit/cpdf_pagecontentmanager.cpp b/core/fpdfapi/edit/cpdf_pagecontentmanager.cpp
+index 82d93a8..d991834 100644
+--- a/core/fpdfapi/edit/cpdf_pagecontentmanager.cpp
++++ b/core/fpdfapi/edit/cpdf_pagecontentmanager.cpp
+@@ -29,9 +29,7 @@
+ CPDF_PageContentManager::CPDF_PageContentManager(
+     CPDF_PageObjectHolder* page_obj_holder,
+     CPDF_Document* document)
+-    : page_obj_holder_(page_obj_holder),
+-      document_(document),
+-      objects_with_multi_refs_(GetObjectsWithMultipleReferences(document_)) {
++    : page_obj_holder_(page_obj_holder), document_(document) {
+   RetainPtr<CPDF_Dictionary> page_dict = page_obj_holder_->GetMutableDict();
+   RetainPtr<CPDF_Object> contents_obj =
+       page_dict->GetMutableObjectFor("Contents");
+@@ -52,7 +50,7 @@ CPDF_PageContentManager::CPDF_PageContentManager(
+ 
+     contents_array.Reset(indirect_obj->AsMutableArray());
+     if (contents_array) {
+-      if (pdfium::Contains(objects_with_multi_refs_,
++      if (pdfium::Contains(GetObjectsWithMultipleReferences(),
+                            contents_array->GetObjNum())) {
+         RetainPtr<CPDF_Array> cloned_contents_array =
+             pdfium::WrapRetain(contents_array->Clone()->AsMutableArray());
+@@ -71,6 +69,14 @@ CPDF_PageContentManager::~CPDF_PageContentManager() {
+   ExecuteScheduledRemovals();
+ }
+ 
++const std::set<uint32_t>&
++CPDF_PageContentManager::GetObjectsWithMultipleReferences() {
++  if (!objects_with_multi_refs_.has_value()) {
++    objects_with_multi_refs_ = ::GetObjectsWithMultipleReferences(document_);
++  }
++  return objects_with_multi_refs_.value();
++}
++
+ bool CPDF_PageContentManager::HasStreamAtIndex(size_t stream_index) {
+   return !!GetStreamByIndex(stream_index);
+ }
+@@ -143,7 +149,7 @@ void CPDF_PageContentManager::UpdateStream(size_t stream_index,
+ 
+   RetainPtr<CPDF_Stream> existing_stream = GetStreamByIndex(stream_index);
+   CHECK(existing_stream);
+-  if (!pdfium::Contains(objects_with_multi_refs_,
++  if (!pdfium::Contains(GetObjectsWithMultipleReferences(),
+                         existing_stream->GetObjNum())) {
+     existing_stream->SetDataFromStringstreamAndRemoveFilter(buf);
+     return;
+diff --git a/core/fpdfapi/edit/cpdf_pagecontentmanager.h b/core/fpdfapi/edit/cpdf_pagecontentmanager.h
+index 1a6d94b..26f23e0 100644
+--- a/core/fpdfapi/edit/cpdf_pagecontentmanager.h
++++ b/core/fpdfapi/edit/cpdf_pagecontentmanager.h
+@@ -7,6 +7,7 @@
+ 
+ #include <stdint.h>
+ 
++#include <optional>
+ #include <set>
+ #include <variant>
+ 
+@@ -52,9 +53,11 @@ class CPDF_PageContentManager {
+   RetainPtr<CPDF_Stream> GetContentsStream();
+   RetainPtr<CPDF_Array> GetContentsArray();
+ 
++  const std::set<uint32_t>& GetObjectsWithMultipleReferences();
++
+   UnownedPtr<CPDF_PageObjectHolder> const page_obj_holder_;
+   UnownedPtr<CPDF_Document> const document_;
+-  const std::set<uint32_t> objects_with_multi_refs_;
++  std::optional<std::set<uint32_t>> objects_with_multi_refs_;
+   // When holding a CPDF_Stream, the pointer may be null.
+   std::variant<RetainPtr<CPDF_Stream>, RetainPtr<CPDF_Array>> contents_;
+   std::set<size_t> streams_to_remove_;

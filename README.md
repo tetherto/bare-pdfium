@@ -467,7 +467,10 @@ XMP `/Metadata` stream when an encrypted document is saved, which PDFium skips.
 `form-expansion-budget` caps the form XObjects one page may expand to 100000,
 since a self-referencing form otherwise grows exponentially within PDFium's
 nesting limit. `page-object-number` adds `FPDFPage_GetObjectNumber`, which
-lets edits find a page listed twice in the page tree. Then build PDFium for a target from
+lets edits find a page listed twice in the page tree. `lazy-shared-object-scan`
+makes regenerating a page's content walk the document's object tree only when
+the page's content streams might be shared, instead of on every page, which made
+`watermark` and `draw` across many pages quadratic. Then build PDFium for a target from
 [`gn/target/`](gn/target). Revert the patches with `git apply --reverse` before the next
 `gclient sync`, which needs a clean tree:
 
