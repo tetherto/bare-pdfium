@@ -476,8 +476,11 @@ bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_p
     return BARE_PDFIUM_E_LIMIT;
   }
 
-  FPDF_BITMAP bitmap = FPDFBitmap_Create(width, height, 1);
+  int stride = width * 4;
+  uint8_t *rgba = malloc((size_t) stride * (size_t) height);
+  FPDF_BITMAP bitmap = rgba ? FPDFBitmap_CreateEx(width, height, FPDFBitmap_BGRA, rgba, stride) : NULL;
   if (bitmap == NULL) {
+    free(rgba);
     FPDF_ClosePage(page);
     return BARE_PDFIUM_E_MEMORY;
   }
@@ -485,13 +488,15 @@ bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_p
   // Paint white first: a page with no background renders onto transparency,
   // and a vision model reads a transparent PNG as a black rectangle.
   FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
-  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT);
+  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT | FPDF_REVERSE_BYTE_ORDER);
 
   FPDF_ClosePage(page);
-
-  bool copied = bare_pdfium__raster(bitmap, result);
   FPDFBitmap_Destroy(bitmap);
-  return copied ? NULL : BARE_PDFIUM_E_MEMORY;
+
+  result->width = width;
+  result->height = height;
+  result->rgba = rgba;
+  return NULL;
 }
 
 static const char *
