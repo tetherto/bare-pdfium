@@ -32,6 +32,18 @@ export interface TextOptions {
 
 export interface RenderOptions {
   scale?: number
+  /** render only this part of the page, in points from the bottom-left corner of the page as displayed */
+  clip?: Bounds
+}
+
+export interface AsyncRenderOptions extends RenderOptions {
+  /** an AbortSignal (from bare-abort-controller or any WHATWG implementation) that cancels the render */
+  signal?: {
+    readonly aborted: boolean
+    readonly reason?: unknown
+    addEventListener(type: 'abort', listener: () => void): void
+    removeEventListener?(type: 'abort', listener: () => void): void
+  }
 }
 
 export type LoadErrorCode = 'FILE' | 'FORMAT' | 'PASSWORD' | 'SECURITY' | 'PAGE' | 'UNKNOWN'
@@ -189,7 +201,7 @@ export class Doc {
   pageFlags(page: number): PageFlags
   /** rasterize one page to RGBA; `scale` maps points to pixels (1 = 72 DPI) */
   render(page: number, opts?: RenderOptions): RasterImage
-  renderAsync(page: number, opts?: RenderOptions): Promise<RasterImage>
+  renderAsync(page: number, opts?: AsyncRenderOptions): Promise<RasterImage>
   /** the page's embedded raster images, each rendered to RGBA, with where each sits on the page */
   extractImages(page: number): ExtractedImage[]
   /** the page's text layer as a string, empty when the page has none (a scan) */

@@ -51,6 +51,7 @@
     "bare-png": "^1.0.9"
   },
   "devDependencies": {
+    "bare-abort-controller": "^1.1.2",
     "bare-fs": "^4.8.2",
     "bare-os": "^3.9.3",
     "bare-path": "^3.1.2",

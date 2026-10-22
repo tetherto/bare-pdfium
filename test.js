@@ -388,6 +388,88 @@ test('renderAsync matches render', async (t) => {
   doc.close()
 })
 
+function busyDoc() {
+  const doc = addon.create()
+  doc.addPage({ width: 600, height: 600 })
+  const items = []
+  for (let i = 0; i < 40000; i++) {
+    items.push({
+      type: 'rect',
+      x: (i * 7) % 590,
+      y: (i * 13) % 590,
+      width: 6,
+      height: 6,
+      fill: [i % 255, 80, 160],
+      opacity: 0.5
+    })
+  }
+  doc.draw(0, items)
+  return doc
+}
+
+test('render clip draws one region at the full-page scale', (t) => {
+  const doc = busyDoc()
+  const full = doc.render(0, { scale: 2 })
+  const tile = doc.render(0, { scale: 2, clip: { x: 100, y: 200, width: 150, height: 100 } })
+  t.alike([tile.width, tile.height], [300, 200])
+  let same = true
+  for (let y = 0; y < tile.height && same; y++) {
+    const row = tile.data.subarray(y * tile.width * 4, (y + 1) * tile.width * 4)
+    const start = ((y + 600) * full.width + 200) * 4
+    same = row.equals(full.data.subarray(start, start + tile.width * 4))
+  }
+  t.ok(same, 'the tile matches the same crop of a full render')
+  doc.close()
+})
+
+test('render clip validates its box', (t) => {
+  const doc = addon.open(textPdf())
+  t.exception.all(
+    () => doc.render(0, { clip: { x: 0, y: 0, width: 0, height: 10 } }),
+    /greater than 0/
+  )
+  t.exception.all(() => doc.render(0, { clip: { x: 'a', y: 0, width: 5, height: 10 } }), /clip x/)
+  t.exception.all(() => doc.render(0, { clip: 5 }), /clip must be an object/)
+  doc.close()
+})
+
+test('renderAsync with a signal renders the same pixels', async (t) => {
+  const { AbortController } = require('bare-abort-controller')
+  const doc = busyDoc()
+  const plain = doc.render(0, { scale: 1 })
+  const signalled = await doc.renderAsync(0, { scale: 1, signal: new AbortController().signal })
+  t.ok(plain.data.equals(signalled.data))
+  doc.close()
+})
+
+test('renderAsync rejects with ABORTED when its signal aborts', async (t) => {
+  const { AbortController } = require('bare-abort-controller')
+  const doc = busyDoc()
+
+  const early = new AbortController()
+  early.abort(new Error('before'))
+  await t.exception(doc.renderAsync(0, { signal: early.signal }), /aborted/)
+
+  const queued = new AbortController()
+  const first = doc.renderAsync(0, { scale: 3 })
+  const second = doc.renderAsync(0, { scale: 3, signal: queued.signal })
+  queued.abort(new Error('scrolled away'))
+  await first
+  const err = await second.catch((e) => e)
+  t.is(err.code, 'ABORTED', 'a queued render is skipped')
+  t.is(err.cause.message, 'scrolled away', 'the reason is kept as the cause')
+
+  const running = new AbortController()
+  const started = Date.now()
+  const pending = doc.renderAsync(0, { scale: 4, signal: running.signal })
+  setTimeout(() => running.abort(), 5)
+  const stopped = await pending.catch((e) => e)
+  t.is(stopped.code, 'ABORTED', `a running render stops (after ${Date.now() - started} ms)`)
+
+  await t.exception.all(doc.renderAsync(0, { signal: {} }), /AbortSignal/)
+  doc.close()
+})
+
 test('async calls reject on an out-of-range page', async (t) => {
   const doc = addon.open(textPdf())
   await t.exception.all(doc.extractTextAsync(5))

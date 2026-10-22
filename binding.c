@@ -4,6 +4,7 @@
 #include <fpdf_edit.h>
 #include <fpdf_formfill.h>
 #include <fpdf_ppo.h>
+#include <fpdf_progressive.h>
 #include <fpdf_save.h>
 #include <fpdf_text.h>
 #include <fpdfview.h>
@@ -46,6 +47,7 @@ static const int BARE_PDFIUM_MIN_IMAGE_PX = 8;
   V(PAGE, "PAGE", "failed to load page") \
   V(TEXT_PAGE, "PAGE", "failed to load text page") \
   V(LIMIT, "LIMIT", "rendered dimensions exceed limit") \
+  V(ABORTED, "ABORTED", "render was aborted") \
   V(IMAGE_LIMIT, "LIMIT", "an image on the page is over 40 megapixels; render the page instead") \
   V(IMAGES_LIMIT, "LIMIT", "the images on the page exceed 160 megapixels; extract fewer or render the page") \
   V(MEMORY, "MEMORY", "failed to allocate bitmap") \
@@ -149,6 +151,11 @@ typedef struct {
 } bare_pdfium_raster_t;
 
 typedef struct {
+  bool set;
+  double x, y, width, height;
+} bare_pdfium_region_t;
+
+typedef struct {
   uv_work_t req;
   js_env_t *env;
   js_deferred_t *deferred;
@@ -157,6 +164,9 @@ typedef struct {
   int page_index;
   bool clip;
   double scale;
+  bare_pdfium_region_t region;
+  uint8_t *abort;
+  js_ref_t *abort_ref;
   const char *error;
   unsigned short *text;
   size_t units;
@@ -478,25 +488,39 @@ bare_pdfium__throw_load_error(js_env_t *env, unsigned long code) {
   assert(err == 0);
 }
 
+static FPDF_BOOL
+bare_pdfium__need_to_pause(IFSDK_PAUSE *pause) {
+  return __atomic_load_n((uint8_t *) pause->user, __ATOMIC_RELAXED) != 0;
+}
+
 static const char *
-bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_pdfium_raster_t *result) {
+bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, const bare_pdfium_region_t *region, uint8_t *abort, bare_pdfium_raster_t *result) {
+  if (abort && __atomic_load_n(abort, __ATOMIC_RELAXED)) return BARE_PDFIUM_E_ABORTED;
+
   FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
   if (page == NULL) return BARE_PDFIUM_E_PAGE;
 
   // PDF user-space units are points (1/72"); scale maps them to device pixels.
-  int width = (int) lround(FPDF_GetPageWidth(page) * scale);
-  int height = (int) lround(FPDF_GetPageHeight(page) * scale);
-  if (width < 1) width = 1;
-  if (height < 1) height = 1;
+  double page_width = FPDF_GetPageWidth(page);
+  double page_height = FPDF_GetPageHeight(page);
+  double full_width = fmax(1, round(page_width * scale));
+  double full_height = fmax(1, round(page_height * scale));
+  double width = full_width, height = full_height, start_x = 0, start_y = 0;
+  if (region && region->set) {
+    width = fmax(1, round(region->width * scale));
+    height = fmax(1, round(region->height * scale));
+    start_x = -round(region->x * scale);
+    start_y = -round((page_height - region->y - region->height) * scale);
+  }
 
-  if (width > BARE_PDFIUM_MAX_DIM || height > BARE_PDFIUM_MAX_DIM || (int64_t) width * height > BARE_PDFIUM_MAX_PIXELS) {
+  if (width > BARE_PDFIUM_MAX_DIM || height > BARE_PDFIUM_MAX_DIM || width * height > BARE_PDFIUM_MAX_PIXELS || full_width > INT32_MAX / 2 || full_height > INT32_MAX / 2 || fabs(start_x) > INT32_MAX / 2 || fabs(start_y) > INT32_MAX / 2) {
     FPDF_ClosePage(page);
     return BARE_PDFIUM_E_LIMIT;
   }
 
-  int stride = width * 4;
+  int stride = (int) width * 4;
   uint8_t *rgba = malloc((size_t) stride * (size_t) height);
-  FPDF_BITMAP bitmap = rgba ? FPDFBitmap_CreateEx(width, height, FPDFBitmap_BGRA, rgba, stride) : NULL;
+  FPDF_BITMAP bitmap = rgba ? FPDFBitmap_CreateEx((int) width, (int) height, FPDFBitmap_BGRA, rgba, stride) : NULL;
   if (bitmap == NULL) {
     free(rgba);
     FPDF_ClosePage(page);
@@ -505,16 +529,52 @@ bare_pdfium__render_page(FPDF_DOCUMENT doc, int page_index, double scale, bare_p
 
   // Paint white first: a page with no background renders onto transparency,
   // and a vision model reads a transparent PNG as a black rectangle.
-  FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
-  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT | FPDF_REVERSE_BYTE_ORDER);
+  FPDFBitmap_FillRect(bitmap, 0, 0, (int) width, (int) height, 0xffffffff);
+  int flags = FPDF_ANNOT | FPDF_REVERSE_BYTE_ORDER;
+  bool aborted = false;
+  if (abort) {
+    IFSDK_PAUSE pause = {.version = 1, .NeedToPauseNow = bare_pdfium__need_to_pause, .user = abort};
+    int status = FPDF_RenderPageBitmap_Start(bitmap, page, (int) start_x, (int) start_y, (int) full_width, (int) full_height, 0, flags, &pause);
+    while (status == FPDF_RENDER_TOBECONTINUED && !(aborted = __atomic_load_n(abort, __ATOMIC_RELAXED))) {
+      status = FPDF_RenderPage_Continue(page, &pause);
+    }
+    FPDF_RenderPage_Close(page);
+  } else {
+    FPDF_RenderPageBitmap(bitmap, page, (int) start_x, (int) start_y, (int) full_width, (int) full_height, 0, flags);
+  }
 
   FPDF_ClosePage(page);
   FPDFBitmap_Destroy(bitmap);
 
-  result->width = width;
-  result->height = height;
+  if (aborted) {
+    free(rgba);
+    return BARE_PDFIUM_E_ABORTED;
+  }
+
+  result->width = (int) width;
+  result->height = (int) height;
   result->rgba = rgba;
   return NULL;
+}
+
+static bare_pdfium_region_t
+bare_pdfium__region(js_env_t *env, js_value_t *value) {
+  bare_pdfium_region_t region = {0};
+  js_value_type_t type;
+  int err = js_typeof(env, value, &type);
+  assert(err == 0);
+  if (type != js_object) return region;
+  const char *names[4] = {"x", "y", "width", "height"};
+  double *fields[4] = {&region.x, &region.y, &region.width, &region.height};
+  for (int i = 0; i < 4; i++) {
+    js_value_t *field;
+    err = js_get_named_property(env, value, names[i], &field);
+    assert(err == 0);
+    err = js_get_value_double(env, field, fields[i]);
+    assert(err == 0);
+  }
+  region.set = true;
+  return region;
 }
 
 static const char *
@@ -909,8 +969,8 @@ static js_value_t *
 bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
   int err;
 
-  size_t argc = 3;
-  js_value_t *argv[3];
+  size_t argc = 4;
+  js_value_t *argv[4];
 
   err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
   assert(err == 0);
@@ -926,9 +986,11 @@ bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_double(env, argv[2], &scale);
   assert(err == 0);
 
+  bare_pdfium_region_t region = bare_pdfium__region(env, argv[3]);
+
   bare_pdfium_raster_t raster;
   bare_pdfium__lock();
-  const char *error = bare_pdfium__render_page(handle->doc, (int) page_index, scale, &raster);
+  const char *error = bare_pdfium__render_page(handle->doc, (int) page_index, scale, &region, NULL, &raster);
   bare_pdfium__unlock();
 
   if (error) {
@@ -1170,6 +1232,11 @@ bare_pdfium__settle_job(bare_pdfium_job_t *job, js_value_t *resolution) {
   err = js_delete_reference(env, job->ref);
   assert(err == 0);
 
+  if (job->abort_ref) {
+    err = js_delete_reference(env, job->abort_ref);
+    assert(err == 0);
+  }
+
   handle->pending--;
   bare_pdfium__settle_teardown(handle);
 
@@ -1245,7 +1312,7 @@ bare_pdfium__render_work(uv_work_t *req) {
   bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
   bare_pdfium__lock();
   job->error = job->handle->doc
-                 ? bare_pdfium__render_page(job->handle->doc, job->page_index, job->scale, &job->raster)
+                 ? bare_pdfium__render_page(job->handle->doc, job->page_index, job->scale, &job->region, job->abort, &job->raster)
                  : BARE_PDFIUM_E_CLOSED;
   bare_pdfium__unlock();
 }
@@ -1271,8 +1338,8 @@ static js_value_t *
 bare_pdfium_render_async(js_env_t *env, js_callback_info_t *info) {
   int err;
 
-  size_t argc = 3;
-  js_value_t *argv[3];
+  size_t argc = 5;
+  js_value_t *argv[5];
 
   err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
   assert(err == 0);
@@ -1291,6 +1358,20 @@ bare_pdfium_render_async(js_env_t *env, js_callback_info_t *info) {
 
   err = js_get_value_double(env, argv[2], &job->scale);
   assert(err == 0);
+
+  job->region = bare_pdfium__region(env, argv[3]);
+
+  bool has_abort = false;
+  err = js_is_typedarray(env, argv[4], &has_abort);
+  assert(err == 0);
+  if (has_abort) {
+    void *data;
+    err = js_get_typedarray_info(env, argv[4], NULL, &data, NULL, NULL, NULL);
+    assert(err == 0);
+    job->abort = (uint8_t *) data;
+    err = js_create_reference(env, argv[4], 1, &job->abort_ref);
+    assert(err == 0);
+  }
 
   uv_loop_t *loop;
   err = js_get_env_loop(env, &loop);

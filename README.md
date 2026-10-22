@@ -58,8 +58,11 @@ doc.close()
   than ~5% of it (decoration is ignored); `hasText` is false for a scanned page.
   Both look inside form XObjects, and neither builds the text layer, so checking
   every page of a long document is cheap.
-- `render(page, { scale })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
-  is 150 DPI. `data` is a row-major RGBA buffer, `width*height*4` bytes.
+- `render(page, { scale, clip })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
+  is 150 DPI. `data` is a row-major RGBA buffer, `width*height*4` bytes. `clip`
+  (`{ x, y, width, height }` in points from the bottom-left corner of the page
+  as displayed) renders only that region, at the same scale, so a viewer can
+  draw a zoomed-in page as tiles instead of one bitmap past the `LIMIT`.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
   with their transforms), each RGBA, including images drawn by form XObjects.
   `bounds` is where the image sits on the page, in PDF points from the
@@ -121,6 +124,24 @@ for await (const { page, text } of doc.textPagesAsync()) {
 - `renderAsync(page, opts)`, `extractTextAsync(page, opts)` and
   `textPagesAsync(opts)` return the same results as `render`, `extractText` and
   `textPages`.
+- `renderAsync` takes a `signal` from an `AbortController` (for example
+  [`bare-abort-controller`](https://github.com/holepunchto/bare-abort-controller)).
+  Aborting rejects with `ABORTED`, the signal's `reason` as its `cause`: a render
+  still waiting in the queue never starts, and one already running stops at
+  PDFium's next pause point and frees the lock for the next job.
+
+```js
+const { AbortController } = require('bare-abort-controller')
+
+const controller = new AbortController()
+const tile = doc.renderAsync(0, {
+  scale: 4,
+  clip: { x: 0, y: 400, width: 200, height: 200 },
+  signal: controller.signal
+})
+controller.abort() // the user scrolled past this page
+```
+
 - PDFium is not thread-safe, so every PDFium call — sync or async, across all
   open documents — goes through one lock, and async jobs run one at a time. A sync
   call made while an async job is running waits for that job to finish.
@@ -161,6 +182,7 @@ matching messages. Async calls reject with the same codes.
 | `PAGE`             | a page, or its text layer, could not be loaded                                                               |
 | `CLOSED`           | the document was closed, including before a queued async call ran                                            |
 | `LIMIT`            | `render` past 20000 px per side or 40 MP, or `extractImages` past 40 MP for one image or 160 MP for the page |
+| `ABORTED`          | `renderAsync` was cancelled through its `signal`                                                             |
 | `MEMORY`           | a bitmap could not be allocated                                                                              |
 | `UNSUPPORTED_TEXT` | text the font cannot draw: outside the built-in fonts, or missing from a TrueType                            |
 | `FONT`             | a font failed to load, or a draw item names one the document has not loaded                                  |
