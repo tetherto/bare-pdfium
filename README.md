@@ -107,6 +107,34 @@ doc.close()
 doc.extractText(0, { hyphens: 'keep', clip: true })
 ```
 
+### Navigation and text positions
+
+```js
+// => { title, author, subject, keywords, creator, producer, creationDate, modDate }, null for missing entries
+doc.metadata()
+
+// => [{ title, page, children: [...] }, ...], the bookmark tree
+doc.outline()
+
+// => 'iv', 'A-3', ... or null
+doc.pageLabel(0)
+
+// => [{ x, y, width, height, uri, page }, ...], web links have a uri, internal ones a page
+doc.links(0)
+
+// => [{ index, length, rects: [{ x, y, width, height }, ...] }, ...]
+doc.findText(0, 'revenue', { matchCase: false, wholeWord: false })
+
+// => [{ text, x, y, width, height }, ...], each run of text and where it is
+doc.textSpans(0)
+```
+
+All positions are in PDF points from the bottom-left corner of the page.
+`findText` gives one rectangle per line a match spans, ready to draw as a
+highlight; its `index` and `length` count characters of the text layer as
+`extractText(page, { hyphens: 'raw' })` returns it. `textSpans` gives the runs
+PDFium lays out, which is what a viewer needs to let people select text.
+
 ### Async
 
 Every call above is synchronous and blocks the event loop while PDFium works. For
@@ -236,10 +264,17 @@ out.importPages(doc, { pages: [2, 0], at: 0 })
 // turn pages clockwise by a multiple of 90, added to their current rotation
 doc.rotate(90, { pages: [0] })
 
+// remove pages, or move them so the first listed lands at index `to`
+doc.deletePages([3, 4])
+doc.movePages([5, 6], 0)
+
+// draw annotations and form widgets into the page content and drop them
+doc.flatten({ pages: [0] })
+
 // stamp text across the middle of each page
 doc.watermark('DRAFT', { angle: 45, opacity: 0.3, position: 'over' })
 
-// => [{ name, type, value, page, readOnly, required, options? }, ...]
+// => [{ name, type, value, page, readOnly, required, options?, widgets: [{ page, x, y, width, height }] }, ...]
 doc.fields()
 
 // set form fields by name, then read them back
@@ -339,10 +374,13 @@ encrypted input.
 `merge`, `extractPages` and `importPages` copy each page with its widgets, but
 not the document's form (`/AcroForm`), so the copied fields no longer show up
 in `fields()` and cannot be filled. Fill the form before copying pages.
+`deletePages` and `movePages` change the document in place, so its form keeps
+working; use them rather than rebuilding a document to drop or reorder pages.
 
 Each edit also has an async form that runs on a libuv worker thread, the same way
 `renderAsync` does: `importPagesAsync`, `rotateAsync`, `watermarkAsync`,
-`fieldsAsync`, `fillFieldsAsync` and `saveAsync` on a document, and `mergeAsync`,
+`deletePagesAsync`, `movePagesAsync`, `flattenAsync`, `fieldsAsync`,
+`fillFieldsAsync` and `saveAsync` on a document, and `mergeAsync`,
 `extractPagesAsync`, `rotateAsync`, `decryptAsync`, `watermarkAsync`,
 `fieldsAsync`, `fillFieldsAsync` and `encryptAsync` as one-shots. They resolve to what the sync
 form returns.

@@ -60,6 +60,30 @@ function formXObjectPdf() {
   ])
 }
 
+function navigationPdf() {
+  const one = 'BT /F1 24 Tf 40 100 Td (Page One) Tj ET'
+  const two = 'BT /F1 24 Tf 40 100 Td (Page Two) Tj ET'
+  return buildPdf(
+    [
+      '<< /Type /Catalog /Pages 2 0 R /Outlines 8 0 R /PageLabels << /Nums [0 << /S /r >> 1 << /P (A-) /S /D >>] >> >>',
+      '<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 7 0 R >> >> /Annots [12 0 R 13 0 R] >>',
+      `<< /Length ${one.length} >>\nstream\n${one}\nendstream`,
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>',
+      `<< /Length ${two.length} >>\nstream\n${two}\nendstream`,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+      '<< /Type /Outlines /First 9 0 R /Last 10 0 R /Count 3 >>',
+      '<< /Title (Intro) /Parent 8 0 R /Next 10 0 R /Dest [3 0 R /Fit] /First 11 0 R /Last 11 0 R /Count 1 >>',
+      '<< /Title (Second) /Parent 8 0 R /Prev 9 0 R /Dest [5 0 R /Fit] >>',
+      '<< /Title (Detail) /Parent 9 0 R /Dest [5 0 R /Fit] >>',
+      '<< /Type /Annot /Subtype /Link /Rect [10 10 60 30] /A << /S /URI /URI (https://example.com/docs) >> >>',
+      '<< /Type /Annot /Subtype /Link /Rect [10 150 60 170] /Dest [5 0 R /Fit] >>',
+      '<< /Title (A navigation test) /Author (bare-pdfium) /Subject (Outlines, labels and links) >>'
+    ],
+    '/Info 14 0 R '
+  )
+}
+
 function twoPageTextPdf() {
   const one = 'BT /F1 24 Tf 40 100 Td (Page One) Tj ET'
   const two = 'BT /F1 24 Tf 40 100 Td (Page Two) Tj ET'
@@ -749,6 +773,108 @@ test('fields lists the form with types, values and options', (t) => {
   t.alike(byName.size.options, ['S', 'M', 'L'])
   t.is(byName.id.value, 'A-1')
   t.is(byName.id.readOnly, true)
+})
+
+test('fields reports where each widget sits on its page', (t) => {
+  const doc = addon.open(formPdf())
+  const name = doc.fields().find((field) => field.name === 'name')
+  t.alike(name.widgets, [{ page: 0, x: 20, y: 250, width: 180, height: 20 }])
+  doc.close()
+})
+
+test('metadata reads the document information', (t) => {
+  const doc = addon.open(navigationPdf())
+  const info = doc.metadata()
+  t.is(info.title, 'A navigation test')
+  t.is(info.author, 'bare-pdfium')
+  t.is(info.subject, 'Outlines, labels and links')
+  t.is(info.keywords, null, 'a missing entry is null')
+  doc.close()
+})
+
+test('outline returns the bookmark tree with target pages', (t) => {
+  const doc = addon.open(navigationPdf())
+  t.alike(doc.outline(), [
+    { title: 'Intro', page: 0, children: [{ title: 'Detail', page: 1, children: [] }] },
+    { title: 'Second', page: 1, children: [] }
+  ])
+  t.alike(addon.open(textPdf()).outline(), [], 'a PDF without an outline returns an empty list')
+  doc.close()
+})
+
+test('pageLabel follows the document page labels', (t) => {
+  const doc = addon.open(navigationPdf())
+  t.is(doc.pageLabel(0), 'i')
+  t.is(doc.pageLabel(1), 'A-1')
+  t.is(addon.open(textPdf()).pageLabel(0), null, 'no labels gives null')
+  doc.close()
+})
+
+test('links lists web and in-document links with their areas', (t) => {
+  const doc = addon.open(navigationPdf())
+  t.alike(doc.links(0), [
+    { x: 10, y: 10, width: 50, height: 20, uri: 'https://example.com/docs', page: null },
+    { x: 10, y: 150, width: 50, height: 20, uri: null, page: 1 }
+  ])
+  t.alike(doc.links(1), [])
+  doc.close()
+})
+
+test('findText returns each match with its rectangles', (t) => {
+  const doc = addon.open(textPdf())
+  const [match, ...rest] = doc.findText(0, 'pdf')
+  t.is(rest.length, 0)
+  t.is(match.index, 6)
+  t.is(match.length, 3)
+  t.is(match.rects.length, 1)
+  const [rect] = match.rects
+  t.ok(rect.x > 40 && rect.x + rect.width < 200, 'the match sits inside the line')
+  t.ok(rect.y < 100 + 24 && rect.y + rect.height > 100, 'the match covers the baseline')
+  t.is(doc.findText(0, 'pdf', { matchCase: true }).length, 0, 'matchCase is honoured')
+  t.is(doc.findText(0, 'Hel', { wholeWord: true }).length, 0, 'wholeWord is honoured')
+  t.exception.all(() => doc.findText(0, ''), /non-empty string/)
+  doc.close()
+})
+
+test('textSpans gives each run of text and where it is', (t) => {
+  const doc = addon.open(textPdf())
+  const spans = doc.textSpans(0)
+  t.is(spans.length, 1)
+  t.is(spans[0].text, 'Hello PDF')
+  t.ok(spans[0].x >= 40 && spans[0].x < 45, 'starts where the text starts')
+  t.alike(addon.open(imagePdf()).textSpans(0), [], 'a page with no text layer has no spans')
+  doc.close()
+})
+
+test('deletePages and movePages change the page order', async (t) => {
+  const pages = (doc) => [...doc.textPages()].map(({ text }) => text)
+  const doc = addon.open(twoPageTextPdf())
+  doc.importPages(addon.open(textPdf()))
+  t.alike(pages(doc), ['Page One', 'Page Two', 'Hello PDF'])
+  doc.movePages([2], 0)
+  t.alike(pages(doc), ['Hello PDF', 'Page One', 'Page Two'])
+  doc.deletePages([1, 1])
+  t.alike(pages(doc), ['Hello PDF', 'Page Two'], 'a page listed twice is deleted once')
+  await doc.movePagesAsync([0], 1)
+  t.alike(pages(doc), ['Page Two', 'Hello PDF'])
+  await doc.deletePagesAsync([0])
+  t.alike(pages(doc), ['Hello PDF'])
+  t.exception.all(() => doc.deletePages(), /array of page indexes/)
+  t.exception.all(() => doc.movePages([0], 1), /from 0 to 0/)
+  doc.close()
+})
+
+test('flatten turns form widgets into page content', async (t) => {
+  const doc = addon.open(formPdf())
+  t.ok(doc.fields().length > 0)
+  doc.flatten()
+  t.alike(doc.fields(), [], 'the widgets are gone')
+  t.ok(doc.render(0).width > 0, 'the page still renders')
+  doc.close()
+  const other = addon.open(formPdf())
+  await other.flattenAsync({ pages: [0] })
+  t.alike(other.fields(), [])
+  other.close()
 })
 
 test('fields is empty for a PDF without a form', (t) => {

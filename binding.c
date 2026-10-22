@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <bare.h>
 #include <fpdf_annot.h>
+#include <fpdf_doc.h>
 #include <fpdf_edit.h>
+#include <fpdf_flatten.h>
 #include <fpdf_formfill.h>
 #include <fpdf_ppo.h>
 #include <fpdf_progressive.h>
@@ -69,7 +71,10 @@ static const int BARE_PDFIUM_MIN_IMAGE_PX = 8;
   V(DRAW_TEXT, "EDIT", "failed to create text") \
   V(DRAW_RECT, "EDIT", "failed to create rectangle") \
   V(DRAW_LINE, "EDIT", "failed to create line") \
-  V(IMAGE, "IMAGE", "failed to load image")
+  V(IMAGE, "IMAGE", "failed to load image") \
+  V(MOVE, "EDIT", "failed to move pages") \
+  V(FLATTEN, "EDIT", "failed to flatten page") \
+  V(SEARCH, "PAGE", "failed to search the page")
 
 #define V(name, code, message) static const char BARE_PDFIUM_E_##name[] = message;
 BARE_PDFIUM_ERRORS(V)
@@ -1631,6 +1636,9 @@ typedef struct {
   int option_count;
   utf16_t **options;
   bool *selected;
+  struct {
+    double left, bottom, right, top;
+  } rect;
 } bare_pdfium_widget_t;
 
 typedef enum {
@@ -1745,6 +1753,15 @@ bare_pdfium__collect_widget(bare_pdfium_form_walk_t *walk) {
   widget->option_count = 0;
   widget->options = NULL;
   widget->selected = NULL;
+  FS_RECTF rect;
+  if (FPDFAnnot_GetRect(annot, &rect)) {
+    widget->rect.left = fmin(rect.left, rect.right);
+    widget->rect.right = fmax(rect.left, rect.right);
+    widget->rect.bottom = fmin(rect.bottom, rect.top);
+    widget->rect.top = fmax(rect.bottom, rect.top);
+  } else {
+    widget->rect.left = widget->rect.right = widget->rect.bottom = widget->rect.top = 0;
+  }
 
   if (widget->type == FPDF_FORMFIELD_COMBOBOX || widget->type == FPDF_FORMFIELD_LISTBOX) {
     int count = FPDFAnnot_GetOptionCount(form, annot);
@@ -1844,6 +1861,9 @@ bare_pdfium__widgets_result(js_env_t *env, const bare_pdfium_widget_t *widgets, 
     assert(err == 0);
 
     bare_pdfium__set_int(env, item, "page", widget->page);
+    bare_pdfium_box_t rect = {widget->rect.left, widget->rect.bottom, widget->rect.right, widget->rect.top};
+    err = js_set_named_property(env, item, "rect", bare_pdfium__box_value(env, &rect));
+    assert(err == 0);
     bare_pdfium__set_text(env, item, "type", bare_pdfium__field_type(widget->type));
     bare_pdfium__set_field_flags(env, item, widget->flags);
     bare_pdfium__set_bool(env, item, "checked", widget->checked);
@@ -2613,6 +2633,58 @@ bare_pdfium__draw_setup(js_env_t *env, js_value_t **argv, bare_pdfium_edit_job_t
   job->work = bare_pdfium__draw_work;
 }
 
+static int
+bare_pdfium__descending(const void *a, const void *b) {
+  return *(const int *) b - *(const int *) a;
+}
+
+static const char *
+bare_pdfium__delete_work(bare_pdfium_edit_job_t *job) {
+  qsort(job->pages, job->pages_len, sizeof(int), bare_pdfium__descending);
+  for (size_t i = 0; i < job->pages_len; i++) {
+    if (i > 0 && job->pages[i] == job->pages[i - 1]) continue;
+    FPDFPage_Delete(job->handle->doc, job->pages[i]);
+  }
+  return NULL;
+}
+
+static void
+bare_pdfium__delete_setup(js_env_t *env, js_value_t **argv, bare_pdfium_edit_job_t *job) {
+  job->pages = bare_pdfium__copy_pages(env, argv[1], &job->pages_len);
+  job->work = bare_pdfium__delete_work;
+}
+
+static const char *
+bare_pdfium__move_work(bare_pdfium_edit_job_t *job) {
+  return FPDF_MovePages(job->handle->doc, job->pages, (unsigned long) job->pages_len, job->number) ? NULL : BARE_PDFIUM_E_MOVE;
+}
+
+static void
+bare_pdfium__move_setup(js_env_t *env, js_value_t **argv, bare_pdfium_edit_job_t *job) {
+  job->pages = bare_pdfium__copy_pages(env, argv[1], &job->pages_len);
+  int err = js_get_value_int32(env, argv[2], &job->number);
+  assert(err == 0);
+  job->work = bare_pdfium__move_work;
+}
+
+static const char *
+bare_pdfium__flatten_work(bare_pdfium_edit_job_t *job) {
+  for (size_t i = 0; i < job->pages_len; i++) {
+    FPDF_PAGE page = FPDF_LoadPage(job->handle->doc, job->pages[i]);
+    if (page == NULL) return BARE_PDFIUM_E_PAGE;
+    int result = FPDFPage_Flatten(page, FLAT_NORMALDISPLAY);
+    FPDF_ClosePage(page);
+    if (result == FLATTEN_FAIL) return BARE_PDFIUM_E_FLATTEN;
+  }
+  return NULL;
+}
+
+static void
+bare_pdfium__flatten_setup(js_env_t *env, js_value_t **argv, bare_pdfium_edit_job_t *job) {
+  job->pages = bare_pdfium__copy_pages(env, argv[1], &job->pages_len);
+  job->work = bare_pdfium__flatten_work;
+}
+
 #define BARE_PDFIUM_EDIT(name, setup) \
   static js_value_t *bare_pdfium_##name(js_env_t *env, js_callback_info_t *info) { \
     return bare_pdfium__edit(env, info, setup, false); \
@@ -2628,6 +2700,9 @@ BARE_PDFIUM_EDIT(save, bare_pdfium__save_setup)
 BARE_PDFIUM_EDIT(form_widgets, bare_pdfium__widgets_setup)
 BARE_PDFIUM_EDIT(fill_form, bare_pdfium__fill_setup)
 BARE_PDFIUM_EDIT(draw, bare_pdfium__draw_setup)
+BARE_PDFIUM_EDIT(delete_pages, bare_pdfium__delete_setup)
+BARE_PDFIUM_EDIT(move_pages, bare_pdfium__move_setup)
+BARE_PDFIUM_EDIT(flatten, bare_pdfium__flatten_setup)
 
 #undef BARE_PDFIUM_EDIT
 
@@ -2834,6 +2909,439 @@ bare_pdfium__on_env_teardown(void *data) {
   bare_pdfium__unlock();
 }
 
+typedef struct {
+  unsigned short *text;
+  size_t units;
+} bare_pdfium_string_t;
+
+static bare_pdfium_string_t
+bare_pdfium__utf16_bytes(unsigned long bytes, unsigned short *buffer) {
+  bare_pdfium_string_t result = {buffer, bytes >= 2 ? bytes / 2 - 1 : 0};
+  if (result.units == 0) {
+    free(buffer);
+    result.text = NULL;
+  }
+  return result;
+}
+
+static js_value_t *
+bare_pdfium__string_or_null(js_env_t *env, bare_pdfium_string_t string) {
+  js_value_t *result;
+  int err = string.text ? js_create_string_utf16le(env, (const utf16_t *) string.text, string.units, &result) : js_get_null(env, &result);
+  assert(err == 0);
+  return result;
+}
+
+static js_value_t *
+bare_pdfium__int_or_null(js_env_t *env, int value) {
+  js_value_t *result;
+  int err = value >= 0 ? js_create_int64(env, value, &result) : js_get_null(env, &result);
+  assert(err == 0);
+  return result;
+}
+
+static bare_pdfium_doc_t *
+bare_pdfium__read_args(js_env_t *env, js_callback_info_t *info, size_t expected, js_value_t **argv) {
+  size_t argc = expected;
+  int err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+  bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  return bare_pdfium__usable(env, handle) ? handle : NULL;
+}
+
+static js_value_t *
+bare_pdfium_metadata(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[1];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 1, argv);
+  if (handle == NULL) return NULL;
+
+  static const char *tags[] = {"Title", "Author", "Subject", "Keywords", "Creator", "Producer", "CreationDate", "ModDate"};
+  static const char *names[] = {"title", "author", "subject", "keywords", "creator", "producer", "creationDate", "modDate"};
+  bare_pdfium_string_t values[8];
+
+  bare_pdfium__lock();
+  for (int i = 0; i < 8; i++) {
+    unsigned long bytes = FPDF_GetMetaText(handle->doc, tags[i], NULL, 0);
+    unsigned short *buffer = bytes > 2 ? malloc(bytes) : NULL;
+    if (buffer) FPDF_GetMetaText(handle->doc, tags[i], buffer, bytes);
+    values[i] = bare_pdfium__utf16_bytes(buffer ? bytes : 0, buffer);
+  }
+  bare_pdfium__unlock();
+
+  js_value_t *result;
+  int err = js_create_object(env, &result);
+  assert(err == 0);
+  for (int i = 0; i < 8; i++) {
+    err = js_set_named_property(env, result, names[i], bare_pdfium__string_or_null(env, values[i]));
+    assert(err == 0);
+    free(values[i].text);
+  }
+  return result;
+}
+
+static js_value_t *
+bare_pdfium_page_label(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[2];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 2, argv);
+  if (handle == NULL) return NULL;
+  int32_t page_index;
+  int err = js_get_value_int32(env, argv[1], &page_index);
+  assert(err == 0);
+
+  bare_pdfium__lock();
+  unsigned long bytes = FPDF_GetPageLabel(handle->doc, page_index, NULL, 0);
+  unsigned short *buffer = bytes > 2 ? malloc(bytes) : NULL;
+  if (buffer) FPDF_GetPageLabel(handle->doc, page_index, buffer, bytes);
+  bare_pdfium__unlock();
+
+  bare_pdfium_string_t label = bare_pdfium__utf16_bytes(buffer ? bytes : 0, buffer);
+  js_value_t *result = bare_pdfium__string_or_null(env, label);
+  free(label.text);
+  return result;
+}
+
+static const size_t BARE_PDFIUM_MAX_OUTLINE = 65536;
+static const int BARE_PDFIUM_MAX_OUTLINE_DEPTH = 64;
+
+typedef struct {
+  bare_pdfium_string_t title;
+  int page;
+  long parent;
+} bare_pdfium_bookmark_t;
+
+typedef struct {
+  bare_pdfium_bookmark_t *items;
+  size_t count;
+  size_t capacity;
+} bare_pdfium_outline_t;
+
+static int
+bare_pdfium__dest_page(FPDF_DOCUMENT doc, FPDF_DEST dest, FPDF_ACTION action) {
+  if (dest == NULL && action && FPDFAction_GetType(action) == PDFACTION_GOTO) dest = FPDFAction_GetDest(doc, action);
+  return dest ? FPDFDest_GetDestPageIndex(doc, dest) : -1;
+}
+
+static void
+bare_pdfium__walk_outline(FPDF_DOCUMENT doc, FPDF_BOOKMARK parent, long parent_index, int depth, bare_pdfium_outline_t *outline) {
+  if (depth >= BARE_PDFIUM_MAX_OUTLINE_DEPTH) return;
+  for (FPDF_BOOKMARK bookmark = FPDFBookmark_GetFirstChild(doc, parent); bookmark && outline->count < BARE_PDFIUM_MAX_OUTLINE; bookmark = FPDFBookmark_GetNextSibling(doc, bookmark)) {
+    if (outline->count == outline->capacity) {
+      size_t capacity = outline->capacity ? outline->capacity * 2 : 32;
+      bare_pdfium_bookmark_t *items = realloc(outline->items, capacity * sizeof(bare_pdfium_bookmark_t));
+      if (items == NULL) return;
+      outline->items = items;
+      outline->capacity = capacity;
+    }
+    unsigned long bytes = FPDFBookmark_GetTitle(bookmark, NULL, 0);
+    unsigned short *buffer = bytes > 2 ? malloc(bytes) : NULL;
+    if (buffer) FPDFBookmark_GetTitle(bookmark, buffer, bytes);
+    long index = (long) outline->count++;
+    outline->items[index] = (bare_pdfium_bookmark_t){
+      .title = bare_pdfium__utf16_bytes(buffer ? bytes : 0, buffer),
+      .page = bare_pdfium__dest_page(doc, FPDFBookmark_GetDest(doc, bookmark), FPDFBookmark_GetAction(bookmark)),
+      .parent = parent_index,
+    };
+    bare_pdfium__walk_outline(doc, bookmark, index, depth + 1, outline);
+  }
+}
+
+static js_value_t *
+bare_pdfium_outline(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[1];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 1, argv);
+  if (handle == NULL) return NULL;
+
+  bare_pdfium_outline_t outline = {0};
+  bare_pdfium__lock();
+  bare_pdfium__walk_outline(handle->doc, NULL, -1, 0, &outline);
+  bare_pdfium__unlock();
+
+  int err;
+  js_value_t *root;
+  err = js_create_array(env, &root);
+  assert(err == 0);
+  js_value_t **children = outline.count ? malloc(outline.count * sizeof(js_value_t *)) : NULL;
+  for (size_t i = 0; i < outline.count; i++) {
+    bare_pdfium_bookmark_t *item = &outline.items[i];
+    js_value_t *node;
+    err = js_create_object(env, &node);
+    assert(err == 0);
+    err = js_set_named_property(env, node, "title", bare_pdfium__text_result(env, item->title.text, item->title.units));
+    assert(err == 0);
+    err = js_set_named_property(env, node, "page", bare_pdfium__int_or_null(env, item->page));
+    assert(err == 0);
+    err = js_create_array(env, &children[i]);
+    assert(err == 0);
+    err = js_set_named_property(env, node, "children", children[i]);
+    assert(err == 0);
+    js_value_t *list = item->parent < 0 ? root : children[item->parent];
+    uint32_t length;
+    err = js_get_array_length(env, list, &length);
+    assert(err == 0);
+    err = js_set_element(env, list, length, node);
+    assert(err == 0);
+    free(item->title.text);
+  }
+  free(children);
+  free(outline.items);
+  return root;
+}
+
+typedef struct {
+  bare_pdfium_box_t box;
+  char *uri;
+  int page;
+} bare_pdfium_link_t;
+
+static js_value_t *
+bare_pdfium_links(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[2];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 2, argv);
+  if (handle == NULL) return NULL;
+  int32_t page_index;
+  int err = js_get_value_int32(env, argv[1], &page_index);
+  assert(err == 0);
+
+  bare_pdfium__lock();
+  FPDF_PAGE page = FPDF_LoadPage(handle->doc, page_index);
+  if (page == NULL) {
+    bare_pdfium__unlock();
+    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE);
+    return NULL;
+  }
+  bare_pdfium_link_t *links = NULL;
+  size_t count = 0, capacity = 0;
+  int position = 0;
+  FPDF_LINK link;
+  while (count < 100000 && FPDFLink_Enumerate(page, &position, &link)) {
+    if (count == capacity) {
+      capacity = capacity ? capacity * 2 : 16;
+      bare_pdfium_link_t *grown = realloc(links, capacity * sizeof(bare_pdfium_link_t));
+      if (grown == NULL) break;
+      links = grown;
+    }
+    FS_RECTF rect = {0, 0, 0, 0};
+    FPDFLink_GetAnnotRect(link, &rect);
+    FPDF_ACTION action = FPDFLink_GetAction(link);
+    char *uri = NULL;
+    if (action && FPDFAction_GetType(action) == PDFACTION_URI) {
+      unsigned long bytes = FPDFAction_GetURIPath(handle->doc, action, NULL, 0);
+      uri = bytes > 1 ? malloc(bytes) : NULL;
+      if (uri) FPDFAction_GetURIPath(handle->doc, action, uri, bytes);
+    }
+    links[count++] = (bare_pdfium_link_t){
+      .box = {fmin(rect.left, rect.right), fmin(rect.bottom, rect.top), fmax(rect.left, rect.right), fmax(rect.bottom, rect.top)},
+      .uri = uri,
+      .page = bare_pdfium__dest_page(handle->doc, FPDFLink_GetDest(handle->doc, link), action),
+    };
+  }
+  FPDF_ClosePage(page);
+  bare_pdfium__unlock();
+
+  js_value_t *result;
+  err = js_create_array(env, &result);
+  assert(err == 0);
+  for (size_t i = 0; i < count; i++) {
+    js_value_t *item = bare_pdfium__box_value(env, &links[i].box);
+    js_value_t *uri;
+    err = links[i].uri ? js_create_string_utf8(env, (const utf8_t *) links[i].uri, strlen(links[i].uri), &uri) : js_get_null(env, &uri);
+    assert(err == 0);
+    err = js_set_named_property(env, item, "uri", uri);
+    assert(err == 0);
+    err = js_set_named_property(env, item, "page", bare_pdfium__int_or_null(env, links[i].page));
+    assert(err == 0);
+    err = js_set_element(env, result, (uint32_t) i, item);
+    assert(err == 0);
+    free(links[i].uri);
+  }
+  free(links);
+  return result;
+}
+
+typedef struct {
+  int index;
+  int length;
+  size_t first_rect;
+  size_t rect_count;
+  bare_pdfium_string_t text;
+} bare_pdfium_hit_t;
+
+typedef struct {
+  bare_pdfium_hit_t *hits;
+  size_t hit_count, hit_capacity;
+  bare_pdfium_box_t *rects;
+  size_t rect_count, rect_capacity;
+  bool failed;
+} bare_pdfium_hits_t;
+
+static bool
+bare_pdfium__add_hit(bare_pdfium_hits_t *hits, FPDF_TEXTPAGE text_page, int index, int length) {
+  if (hits->hit_count == hits->hit_capacity) {
+    size_t capacity = hits->hit_capacity ? hits->hit_capacity * 2 : 16;
+    bare_pdfium_hit_t *grown = realloc(hits->hits, capacity * sizeof(bare_pdfium_hit_t));
+    if (grown == NULL) return false;
+    hits->hits = grown;
+    hits->hit_capacity = capacity;
+  }
+  int rects = FPDFText_CountRects(text_page, index, length);
+  bare_pdfium_hit_t *hit = &hits->hits[hits->hit_count++];
+  *hit = (bare_pdfium_hit_t){.index = index, .length = length, .first_rect = hits->rect_count, .rect_count = 0, .text = {NULL, 0}};
+  for (int r = 0; r < rects; r++) {
+    double left, top, right, bottom;
+    if (!FPDFText_GetRect(text_page, r, &left, &top, &right, &bottom)) continue;
+    if (hits->rect_count == hits->rect_capacity) {
+      size_t capacity = hits->rect_capacity ? hits->rect_capacity * 2 : 32;
+      bare_pdfium_box_t *grown = realloc(hits->rects, capacity * sizeof(bare_pdfium_box_t));
+      if (grown == NULL) return false;
+      hits->rects = grown;
+      hits->rect_capacity = capacity;
+    }
+    hits->rects[hits->rect_count++] = (bare_pdfium_box_t){fmin(left, right), fmin(bottom, top), fmax(left, right), fmax(bottom, top)};
+    hit->rect_count++;
+  }
+  return true;
+}
+
+static js_value_t *
+bare_pdfium__hits_value(js_env_t *env, bare_pdfium_hits_t *hits, bool spans) {
+  int err;
+  js_value_t *result;
+  err = js_create_array(env, &result);
+  assert(err == 0);
+  uint32_t out = 0;
+  for (size_t i = 0; i < hits->hit_count; i++) {
+    bare_pdfium_hit_t *hit = &hits->hits[i];
+    if (spans) {
+      if (hit->rect_count == 0) continue;
+      js_value_t *item = bare_pdfium__box_value(env, &hits->rects[hit->first_rect]);
+      err = js_set_named_property(env, item, "text", bare_pdfium__text_result(env, hit->text.text, hit->text.units));
+      assert(err == 0);
+      err = js_set_element(env, result, out++, item);
+      assert(err == 0);
+    } else {
+      js_value_t *item;
+      err = js_create_object(env, &item);
+      assert(err == 0);
+      bare_pdfium__set_int(env, item, "index", hit->index);
+      bare_pdfium__set_int(env, item, "length", hit->length);
+      js_value_t *rects;
+      err = js_create_array(env, &rects);
+      assert(err == 0);
+      for (size_t r = 0; r < hit->rect_count; r++) {
+        err = js_set_element(env, rects, (uint32_t) r, bare_pdfium__box_value(env, &hits->rects[hit->first_rect + r]));
+        assert(err == 0);
+      }
+      err = js_set_named_property(env, item, "rects", rects);
+      assert(err == 0);
+      err = js_set_element(env, result, out++, item);
+      assert(err == 0);
+    }
+    free(hit->text.text);
+  }
+  free(hits->hits);
+  free(hits->rects);
+  return result;
+}
+
+static js_value_t *
+bare_pdfium_find_text(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[4];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 4, argv);
+  if (handle == NULL) return NULL;
+  int32_t page_index;
+  int err = js_get_value_int32(env, argv[1], &page_index);
+  assert(err == 0);
+  utf16_t *query = bare_pdfium__utf16(env, argv[2]);
+  uint32_t flags;
+  err = js_get_value_uint32(env, argv[3], &flags);
+  assert(err == 0);
+
+  bare_pdfium_hits_t hits = {0};
+  const char *error = NULL;
+  bare_pdfium__lock();
+  FPDF_PAGE page = FPDF_LoadPage(handle->doc, page_index);
+  FPDF_TEXTPAGE text_page = page ? FPDFText_LoadPage(page) : NULL;
+  FPDF_SCHHANDLE search = text_page ? FPDFText_FindStart(text_page, (FPDF_WIDESTRING) query, flags, 0) : NULL;
+  if (search == NULL) {
+    error = page == NULL ? BARE_PDFIUM_E_PAGE : BARE_PDFIUM_E_SEARCH;
+  } else {
+    while (hits.hit_count < 10000 && FPDFText_FindNext(search)) {
+      if (!bare_pdfium__add_hit(&hits, text_page, FPDFText_GetSchResultIndex(search), FPDFText_GetSchCount(search))) {
+        error = BARE_PDFIUM_E_MEMORY;
+        break;
+      }
+    }
+    FPDFText_FindClose(search);
+  }
+  if (text_page) FPDFText_ClosePage(text_page);
+  if (page) FPDF_ClosePage(page);
+  bare_pdfium__unlock();
+  free(query);
+
+  if (error) {
+    free(hits.hits);
+    free(hits.rects);
+    bare_pdfium__throw(env, error);
+    return NULL;
+  }
+  return bare_pdfium__hits_value(env, &hits, false);
+}
+
+static js_value_t *
+bare_pdfium_text_spans(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[2];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 2, argv);
+  if (handle == NULL) return NULL;
+  int32_t page_index;
+  int err = js_get_value_int32(env, argv[1], &page_index);
+  assert(err == 0);
+
+  bare_pdfium_hits_t hits = {0};
+  const char *error = NULL;
+  bare_pdfium__lock();
+  FPDF_PAGE page = FPDF_LoadPage(handle->doc, page_index);
+  FPDF_TEXTPAGE text_page = page ? FPDFText_LoadPage(page) : NULL;
+  if (text_page == NULL) {
+    error = BARE_PDFIUM_E_PAGE;
+  } else {
+    int rects = FPDFText_CountRects(text_page, 0, -1);
+    for (int r = 0; r < rects && error == NULL; r++) {
+      double left, top, right, bottom;
+      if (!FPDFText_GetRect(text_page, r, &left, &top, &right, &bottom)) continue;
+      int units = FPDFText_GetBoundedText(text_page, left, top, right, bottom, NULL, 0);
+      if (hits.hit_count == hits.hit_capacity) {
+        size_t capacity = hits.hit_capacity ? hits.hit_capacity * 2 : 64;
+        bare_pdfium_hit_t *grown = realloc(hits.hits, capacity * sizeof(bare_pdfium_hit_t));
+        bare_pdfium_box_t *boxes = grown ? realloc(hits.rects, capacity * sizeof(bare_pdfium_box_t)) : NULL;
+        if (grown) hits.hits = grown;
+        if (boxes) hits.rects = boxes;
+        if (grown == NULL || boxes == NULL) {
+          error = BARE_PDFIUM_E_MEMORY;
+          break;
+        }
+        hits.hit_capacity = hits.rect_capacity = capacity;
+      }
+      unsigned short *buffer = units > 0 ? malloc((size_t) (units + 1) * sizeof(unsigned short)) : NULL;
+      if (buffer) FPDFText_GetBoundedText(text_page, left, top, right, bottom, buffer, units + 1);
+      hits.rects[hits.rect_count] = (bare_pdfium_box_t){fmin(left, right), fmin(bottom, top), fmax(left, right), fmax(bottom, top)};
+      hits.hits[hits.hit_count++] = (bare_pdfium_hit_t){.first_rect = hits.rect_count++, .rect_count = 1, .text = {buffer, buffer ? (size_t) units : 0}};
+    }
+  }
+  if (text_page) FPDFText_ClosePage(text_page);
+  if (page) FPDF_ClosePage(page);
+  bare_pdfium__unlock();
+
+  if (error) {
+    for (size_t i = 0; i < hits.hit_count; i++)
+      free(hits.hits[i].text.text);
+    free(hits.hits);
+    free(hits.rects);
+    bare_pdfium__throw(env, error);
+    return NULL;
+  }
+  return bare_pdfium__hits_value(env, &hits, true);
+}
+
 static js_value_t *
 bare_pdfium_load_image(js_env_t *env, js_callback_info_t *info) {
   int err;
@@ -2929,6 +3437,18 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("draw", bare_pdfium_draw)
   V("drawAsync", bare_pdfium_draw_async)
   V("loadImage", bare_pdfium_load_image)
+  V("deletePages", bare_pdfium_delete_pages)
+  V("deletePagesAsync", bare_pdfium_delete_pages_async)
+  V("movePages", bare_pdfium_move_pages)
+  V("movePagesAsync", bare_pdfium_move_pages_async)
+  V("flatten", bare_pdfium_flatten)
+  V("flattenAsync", bare_pdfium_flatten_async)
+  V("metadata", bare_pdfium_metadata)
+  V("pageLabel", bare_pdfium_page_label)
+  V("outline", bare_pdfium_outline)
+  V("links", bare_pdfium_links)
+  V("findText", bare_pdfium_find_text)
+  V("textSpans", bare_pdfium_text_spans)
 #undef V
 
 #define V(name, n) \
@@ -2944,6 +3464,8 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("DRAW_RECT", BARE_PDFIUM_DRAW_RECT)
   V("DRAW_LINE", BARE_PDFIUM_DRAW_LINE)
   V("DRAW_IMAGE", BARE_PDFIUM_DRAW_IMAGE)
+  V("MATCH_CASE", FPDF_MATCHCASE)
+  V("MATCH_WHOLE_WORD", FPDF_MATCHWHOLEWORD)
 #undef V
 
   return exports;
