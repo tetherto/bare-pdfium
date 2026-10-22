@@ -45,6 +45,21 @@ function imagePdf() {
   ])
 }
 
+function formXObjectPdf() {
+  const page = 'q 1 0 0 1 0 0 cm /Fm0 Do Q'
+  const form = 'q 100 0 0 50 20 30 cm /Im0 Do Q BT /F1 12 Tf 20 120 Td (Inside a form) Tj ET'
+  const px = '\xff\x00\x00\x00\xff\x00\x00\x00\xff\xff\xff\xff'
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] /Contents 4 0 R /Resources << /XObject << /Fm0 5 0 R >> >> >>',
+    `<< /Length ${page.length} >>\nstream\n${page}\nendstream`,
+    `<< /Type /XObject /Subtype /Form /BBox [0 0 200 200] /Matrix [2 0 0 2 10 10] /Resources << /XObject << /Im0 6 0 R >> /Font << /F1 7 0 R >> >> /Length ${form.length} >>\nstream\n${form}\nendstream`,
+    `<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${px.length} >>\nstream\n${px}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
 function twoPageTextPdf() {
   const one = 'BT /F1 24 Tf 40 100 Td (Page One) Tj ET'
   const two = 'BT /F1 24 Tf 40 100 Td (Page Two) Tj ET'
@@ -132,6 +147,58 @@ test('pageFlags and extractImages find a page image', (t) => {
   const [first] = images
   t.is(first.data.length, first.width * first.height * 4, 'extracted image is RGBA')
   doc.close()
+})
+
+test('extractImages reports where each image sits on the page', (t) => {
+  const doc = addon.open(imagePdf())
+  const [image] = doc.extractImages(0)
+  t.alike(image.bounds, { x: 0, y: 0, width: 200, height: 200 })
+  doc.close()
+})
+
+test('pageFlags and extractImages look inside form XObjects', (t) => {
+  const doc = addon.open(formXObjectPdf())
+  t.alike(doc.pageFlags(0), { hasImage: true, hasText: true })
+  const images = doc.extractImages(0)
+  t.is(images.length, 1, 'the image drawn by the form is found')
+  t.alike(
+    images[0].bounds,
+    { x: 50, y: 70, width: 200, height: 100 },
+    'bounds include the form matrix'
+  )
+  doc.close()
+})
+
+test('pageFlags hasText agrees with the text layer on every fixture page', (t) => {
+  const path = require('bare-path')
+  let pages = 0
+  for (const dir of ['test/fixtures/pdfium', 'test/fixtures/hostile']) {
+    for (const name of fs
+      .readdirSync(path.join(__dirname, dir))
+      .filter((f) => f.endsWith('.pdf'))) {
+      let doc
+      try {
+        doc = addon.open(fs.readFileSync(path.join(__dirname, dir, name)))
+      } catch {
+        continue
+      }
+      for (let page = 0; page < Math.min(doc.pageCount(), 20); page++) {
+        let flags, text
+        try {
+          flags = doc.pageFlags(page)
+          text = doc.extractText(page, { hyphens: 'raw' })
+        } catch {
+          continue
+        }
+        pages++
+        if (flags.hasText !== text.length > 0) {
+          t.fail(`${name} page ${page}: hasText ${flags.hasText}`)
+        }
+      }
+      doc.close()
+    }
+  }
+  t.ok(pages > 100, `${pages} pages agree`)
 })
 
 test('extractText returns the page text layer', (t) => {

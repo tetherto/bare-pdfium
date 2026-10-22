@@ -37,7 +37,7 @@ doc.pageFlags(0)
 // => { width, height, data }, RGBA on a white background
 doc.render(0, { scale: 2 })
 
-// => [{ width, height, data }, ...], the page's embedded images
+// => [{ width, height, data, bounds: { x, y, width, height } }, ...], the page's embedded images
 doc.extractImages(0)
 
 // => string, the page's text layer ('' if none)
@@ -56,10 +56,14 @@ doc.close()
   twice. The returned handle is identical either way.
 - `pageFlags(page)` — `hasImage` is true when the page has an image covering more
   than ~5% of it (decoration is ignored); `hasText` is false for a scanned page.
+  Both look inside form XObjects, and neither builds the text layer, so checking
+  every page of a long document is cheap.
 - `render(page, { scale })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
   is 150 DPI. `data` is a row-major RGBA buffer, `width*height*4` bytes.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
-  with their transforms), each RGBA. Images under 8px are skipped. An image over
+  with their transforms), each RGBA, including images drawn by form XObjects.
+  `bounds` is where the image sits on the page, in PDF points from the
+  bottom-left corner. Images under 8px are skipped. An image over
   40 megapixels, or more than 160 megapixels of images on one page, throws
   `LIMIT`; render the page with a smaller `scale` instead.
 - `extractText(page, opts)` — the page's text layer as a string, empty for a page

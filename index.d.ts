@@ -5,6 +5,19 @@ export interface RasterImage {
   data: Uint8Array
 }
 
+export interface Bounds {
+  /** PDF points from the bottom-left corner of the page */
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ExtractedImage extends RasterImage {
+  /** where the image sits on the page */
+  bounds: Bounds
+}
+
 export interface PageFlags {
   /** the page has an image large enough to be content, not decoration */
   hasImage: boolean
@@ -177,8 +190,8 @@ export class Doc {
   /** rasterize one page to RGBA; `scale` maps points to pixels (1 = 72 DPI) */
   render(page: number, opts?: RenderOptions): RasterImage
   renderAsync(page: number, opts?: RenderOptions): Promise<RasterImage>
-  /** the page's embedded raster images, each rendered to RGBA */
-  extractImages(page: number): RasterImage[]
+  /** the page's embedded raster images, each rendered to RGBA, with where each sits on the page */
+  extractImages(page: number): ExtractedImage[]
   /** the page's text layer as a string, empty when the page has none (a scan) */
   extractText(page: number, opts?: TextOptions): string
   extractTextAsync(page: number, opts?: TextOptions): Promise<string>

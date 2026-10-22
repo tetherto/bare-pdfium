@@ -757,6 +757,94 @@ bare_pdfium_page_size(js_env_t *env, js_callback_info_t *info) {
   return result;
 }
 
+static const int BARE_PDFIUM_MAX_FORM_DEPTH = 32;
+
+typedef struct {
+  double a, b, c, d, e, f;
+} bare_pdfium_matrix_t;
+
+typedef struct {
+  double left, bottom, right, top;
+} bare_pdfium_box_t;
+
+typedef bool (*bare_pdfium_visit_fn)(FPDF_PAGEOBJECT object, int type, const bare_pdfium_box_t *box, void *context);
+
+static bare_pdfium_matrix_t
+bare_pdfium__concat(const FS_MATRIX *inner, const bare_pdfium_matrix_t *outer) {
+  return (bare_pdfium_matrix_t){
+    .a = inner->a * outer->a + inner->b * outer->c,
+    .b = inner->a * outer->b + inner->b * outer->d,
+    .c = inner->c * outer->a + inner->d * outer->c,
+    .d = inner->c * outer->b + inner->d * outer->d,
+    .e = inner->e * outer->a + inner->f * outer->c + outer->e,
+    .f = inner->e * outer->b + inner->f * outer->d + outer->f,
+  };
+}
+
+static bool
+bare_pdfium__object_box(FPDF_PAGEOBJECT object, const bare_pdfium_matrix_t *m, bare_pdfium_box_t *box) {
+  float left, bottom, right, top;
+  if (!FPDFPageObj_GetBounds(object, &left, &bottom, &right, &top)) return false;
+  double xs[4] = {left, right, left, right};
+  double ys[4] = {bottom, bottom, top, top};
+  for (int i = 0; i < 4; i++) {
+    double x = m->a * xs[i] + m->c * ys[i] + m->e;
+    double y = m->b * xs[i] + m->d * ys[i] + m->f;
+    if (i == 0 || x < box->left) box->left = x;
+    if (i == 0 || x > box->right) box->right = x;
+    if (i == 0 || y < box->bottom) box->bottom = y;
+    if (i == 0 || y > box->top) box->top = y;
+  }
+  return true;
+}
+
+static bool
+bare_pdfium__visit_objects(FPDF_PAGE page, FPDF_PAGEOBJECT form, const bare_pdfium_matrix_t *m, int depth, bare_pdfium_visit_fn fn, void *context) {
+  int count = form ? FPDFFormObj_CountObjects(form) : FPDFPage_CountObjects(page);
+  for (int i = 0; i < count; i++) {
+    FPDF_PAGEOBJECT object = form ? FPDFFormObj_GetObject(form, (unsigned long) i) : FPDFPage_GetObject(page, i);
+    if (object == NULL) continue;
+    int type = FPDFPageObj_GetType(object);
+    if (type == FPDF_PAGEOBJ_FORM) {
+      FS_MATRIX inner;
+      if (depth >= BARE_PDFIUM_MAX_FORM_DEPTH || !FPDFPageObj_GetMatrix(object, &inner)) continue;
+      bare_pdfium_matrix_t nested = bare_pdfium__concat(&inner, m);
+      if (!bare_pdfium__visit_objects(page, object, &nested, depth + 1, fn, context)) return false;
+      continue;
+    }
+    bare_pdfium_box_t box;
+    bool bounded = bare_pdfium__object_box(object, m, &box);
+    if (!fn(object, type, bounded ? &box : NULL, context)) return false;
+  }
+  return true;
+}
+
+static void
+bare_pdfium__visit_page(FPDF_PAGE page, bare_pdfium_visit_fn fn, void *context) {
+  bare_pdfium_matrix_t identity = {1, 0, 0, 1, 0, 0};
+  bare_pdfium__visit_objects(page, NULL, &identity, 0, fn, context);
+}
+
+typedef struct {
+  double page_area;
+  bool has_image;
+  bool has_text;
+} bare_pdfium_flags_t;
+
+static bool
+bare_pdfium__flag_object(FPDF_PAGEOBJECT object, int type, const bare_pdfium_box_t *box, void *context) {
+  bare_pdfium_flags_t *flags = (bare_pdfium_flags_t *) context;
+  if (type == FPDF_PAGEOBJ_TEXT && box && (box->right > box->left || box->top > box->bottom)) {
+    flags->has_text = true;
+  } else if (type == FPDF_PAGEOBJ_IMAGE && !flags->has_image) {
+    double area = box ? (box->right - box->left) * (box->top - box->bottom) : 0;
+    if (box == NULL || flags->page_area <= 0 || area >= BARE_PDFIUM_MIN_IMAGE_FRACTION * flags->page_area) {
+      flags->has_image = true;
+    }
+  }
+  return !(flags->has_text && flags->has_image);
+}
+
 static js_value_t *
 bare_pdfium_page_flags(js_env_t *env, js_callback_info_t *info) {
   int err;
@@ -783,27 +871,8 @@ bare_pdfium_page_flags(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
-  double page_area = FPDF_GetPageWidth(page) * FPDF_GetPageHeight(page);
-  bool has_image = false;
-  int objects = FPDFPage_CountObjects(page);
-  for (int i = 0; i < objects && !has_image; i++) {
-    FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, i);
-    if (FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_IMAGE) continue;
-    float left, bottom, right, top;
-    if (!FPDFPageObj_GetBounds(object, &left, &bottom, &right, &top)) {
-      has_image = true;
-      break;
-    }
-    double area = ((double) right - left) * ((double) top - bottom);
-    if (page_area <= 0 || area >= BARE_PDFIUM_MIN_IMAGE_FRACTION * page_area) has_image = true;
-  }
-
-  bool has_text = false;
-  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
-  if (text_page != NULL) {
-    has_text = FPDFText_CountChars(text_page) > 0;
-    FPDFText_ClosePage(text_page);
-  }
+  bare_pdfium_flags_t flags = {.page_area = FPDF_GetPageWidth(page) * FPDF_GetPageHeight(page)};
+  bare_pdfium__visit_page(page, bare_pdfium__flag_object, &flags);
 
   FPDF_ClosePage(page);
 
@@ -812,8 +881,8 @@ bare_pdfium_page_flags(js_env_t *env, js_callback_info_t *info) {
   js_value_t *result;
   err = js_create_object(env, &result);
   assert(err == 0);
-  bare_pdfium__set_bool(env, result, "hasImage", has_image);
-  bare_pdfium__set_bool(env, result, "hasText", has_text);
+  bare_pdfium__set_bool(env, result, "hasImage", flags.has_image);
+  bare_pdfium__set_bool(env, result, "hasText", flags.has_text);
 
   return result;
 }
@@ -852,6 +921,56 @@ bare_pdfium_render(js_env_t *env, js_callback_info_t *info) {
   return bare_pdfium__raster_result(env, &raster);
 }
 
+typedef struct {
+  FPDF_PAGEOBJECT *objects;
+  bare_pdfium_box_t *boxes;
+  size_t count;
+  size_t capacity;
+  bool failed;
+} bare_pdfium_found_t;
+
+static bool
+bare_pdfium__collect_image(FPDF_PAGEOBJECT object, int type, const bare_pdfium_box_t *box, void *context) {
+  bare_pdfium_found_t *found = (bare_pdfium_found_t *) context;
+  if (type != FPDF_PAGEOBJ_IMAGE) return true;
+  if (found->count == found->capacity) {
+    size_t capacity = found->capacity ? found->capacity * 2 : 8;
+    FPDF_PAGEOBJECT *objects = realloc(found->objects, capacity * sizeof(FPDF_PAGEOBJECT));
+    if (objects) found->objects = objects;
+    bare_pdfium_box_t *boxes = objects ? realloc(found->boxes, capacity * sizeof(bare_pdfium_box_t)) : NULL;
+    if (boxes) found->boxes = boxes;
+    if (objects == NULL || boxes == NULL) {
+      found->failed = true;
+      return false;
+    }
+    found->capacity = capacity;
+  }
+  found->objects[found->count] = object;
+  found->boxes[found->count] = box ? *box : (bare_pdfium_box_t){0, 0, 0, 0};
+  found->count++;
+  return true;
+}
+
+static js_value_t *
+bare_pdfium__box_value(js_env_t *env, const bare_pdfium_box_t *box) {
+  int err;
+  js_value_t *result;
+  err = js_create_object(env, &result);
+  assert(err == 0);
+  double values[4] = {box->left, box->bottom, box->right - box->left, box->top - box->bottom};
+  for (int i = 0; i < 4; i++)
+    values[i] = round(values[i] * 1000) / 1000;
+  const char *names[4] = {"x", "y", "width", "height"};
+  for (int i = 0; i < 4; i++) {
+    js_value_t *value;
+    err = js_create_double(env, values[i], &value);
+    assert(err == 0);
+    err = js_set_named_property(env, result, names[i], value);
+    assert(err == 0);
+  }
+  return result;
+}
+
 static js_value_t *
 bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
   int err;
@@ -878,14 +997,15 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
-  int objects = FPDFPage_CountObjects(page);
-  bare_pdfium_raster_t *images = objects > 0 ? malloc(sizeof(bare_pdfium_raster_t) * (size_t) objects) : NULL;
-  const char *error = objects > 0 && images == NULL ? BARE_PDFIUM_E_MEMORY : NULL;
+  bare_pdfium_found_t found = {0};
+  bare_pdfium__visit_page(page, bare_pdfium__collect_image, &found);
+  bare_pdfium_raster_t *images = found.count > 0 ? malloc(sizeof(bare_pdfium_raster_t) * found.count) : NULL;
+  bare_pdfium_box_t *boxes = found.count > 0 ? malloc(sizeof(bare_pdfium_box_t) * found.count) : NULL;
+  const char *error = found.failed || (found.count > 0 && (images == NULL || boxes == NULL)) ? BARE_PDFIUM_E_MEMORY : NULL;
   uint32_t count = 0;
   int64_t total = 0;
-  for (int i = 0; error == NULL && i < objects; i++) {
-    FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, i);
-    if (FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_IMAGE) continue;
+  for (size_t i = 0; error == NULL && i < found.count; i++) {
+    FPDF_PAGEOBJECT object = found.objects[i];
 
     unsigned int source_width = 0, source_height = 0;
     if (!FPDFImageObj_GetImagePixelSize(object, &source_width, &source_height)) continue;
@@ -911,11 +1031,17 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
       continue;
     }
 
-    if (bare_pdfium__raster(bitmap, &images[count])) count++;
-    else error = BARE_PDFIUM_E_MEMORY;
+    if (bare_pdfium__raster(bitmap, &images[count])) {
+      boxes[count] = found.boxes[i];
+      count++;
+    } else {
+      error = BARE_PDFIUM_E_MEMORY;
+    }
     FPDFBitmap_Destroy(bitmap);
   }
 
+  free(found.objects);
+  free(found.boxes);
   FPDF_ClosePage(page);
 
   bare_pdfium__unlock();
@@ -924,6 +1050,7 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
     for (uint32_t i = 0; i < count; i++)
       free(images[i].rgba);
     free(images);
+    free(boxes);
     bare_pdfium__throw(env, error);
     return NULL;
   }
@@ -934,12 +1061,16 @@ bare_pdfium_extract_images(js_env_t *env, js_callback_info_t *info) {
 
   for (uint32_t i = 0; i < count; i++) {
     js_value_t *item = bare_pdfium__raster_result(env, &images[i]);
+    js_value_t *bounds = bare_pdfium__box_value(env, &boxes[i]);
+    err = js_set_named_property(env, item, "bounds", bounds);
+    assert(err == 0);
 
     err = js_set_element(env, result, i, item);
     assert(err == 0);
   }
 
   free(images);
+  free(boxes);
 
   return result;
 }
