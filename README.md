@@ -377,7 +377,10 @@ const same = pdfium.compose([
   source prints its alt text.
 - Images are PNG or JPEG bytes. JPEGs are embedded as they are, and PNGs are
   decoded with [`bare-png`](https://github.com/holepunchto/bare-png), loaded only
-  when one is used.
+  when one is used. A PNG with no transparency is stored without an alpha mask.
+- An image used more than once is stored once: every use draws the same
+  embedded copy. `compose` does this for repeated blocks with the same `data`;
+  `draw` does it within a document when you pass the same `Buffer` again.
 
 | option        | default       | effect                                                                                            |
 | ------------- | ------------- | ------------------------------------------------------------------------------------------------- |
