@@ -113,6 +113,76 @@ test('draw places PNG and JPEG images', (t) => {
   t.is(pdfium.open(pdf).extractImages(0).length, 2)
 })
 
+function noisyPng(width, height, alpha = 255) {
+  const data = Buffer.alloc(width * height * 4)
+  let x = 2463534242
+  for (let i = 0; i < width * height; i++) {
+    x ^= x << 13
+    x ^= x >>> 17
+    x ^= x << 5
+    data[i * 4] = x & 255
+    data[i * 4 + 1] = (x >>> 8) & 255
+    data[i * 4 + 2] = (x >>> 16) & 255
+    data[i * 4 + 3] = alpha
+  }
+  return png.encode({ width, height, data })
+}
+
+function count(pdf, pattern) {
+  return (Buffer.from(pdf).toString('latin1').match(pattern) || []).length
+}
+
+test('compose stores an image used on several pages once', (t) => {
+  const image = noisyPng(200, 200)
+  const once = pdfium.compose([{ type: 'image', data: image, width: 100 }])
+  const blocks = []
+  for (let i = 0; i < 10; i++) {
+    if (i) blocks.push({ type: 'pageBreak' })
+    blocks.push({ type: 'image', data: image, width: 100 })
+  }
+  const tenTimes = pdfium.compose(blocks)
+  t.is(pdfium.pageCount(tenTimes), 10)
+  t.ok(
+    tenTimes.byteLength < once.byteLength * 1.2,
+    `${tenTimes.byteLength} bytes for ten uses vs ${once.byteLength} for one`
+  )
+  for (let page = 0; page < 10; page++) {
+    t.is(pdfium.open(tenTimes).extractImages(page).length, 1, `page ${page + 1} shows the image`)
+  }
+})
+
+test('draw reuses an image passed as the same buffer', (t) => {
+  const image = noisyPng(200, 200)
+  const doc = pdfium.create()
+  doc.addPage({ width: 300, height: 300 })
+  doc.addPage({ width: 300, height: 300 })
+  doc.draw(0, [{ type: 'image', image, x: 10, y: 10, width: 100, height: 100 }])
+  doc.draw(1, [{ type: 'image', image, x: 10, y: 10, width: 100, height: 100 }])
+  const twice = doc.save()
+  doc.close()
+  const single = pdfium.create()
+  single.addPage({ width: 300, height: 300 })
+  single.draw(0, [{ type: 'image', image, x: 10, y: 10, width: 100, height: 100 }])
+  const once = single.save()
+  single.close()
+  t.ok(twice.byteLength < once.byteLength * 1.2, `${twice.byteLength} bytes vs ${once.byteLength}`)
+})
+
+test('opaque images have no soft mask and translucent ones keep it', (t) => {
+  t.is(count(pdfium.compose([{ type: 'image', data: noisyPng(40, 40) }]), /\/SMask/g), 0)
+  t.is(count(pdfium.compose([{ type: 'image', data: noisyPng(40, 40, 128) }]), /\/SMask/g), 1)
+})
+
+test('extractImages returns a drawn image at full size with its place on the page', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 300, height: 300 })
+  doc.draw(0, [{ type: 'image', image: gradientPng(80, 40), x: 20, y: 30, width: 160, height: 80 }])
+  const [image] = doc.extractImages(0)
+  doc.close()
+  t.alike([image.width, image.height], [80, 40])
+  t.alike(image.bounds, { x: 20, y: 30, width: 160, height: 80 })
+})
+
 test('draw rejects bad items', (t) => {
   const doc = pdfium.create()
   doc.addPage()

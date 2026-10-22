@@ -5,6 +5,19 @@ export interface RasterImage {
   data: Uint8Array
 }
 
+export interface Bounds {
+  /** PDF points from the bottom-left corner of the page */
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ExtractedImage extends RasterImage {
+  /** where the image sits on the page */
+  bounds: Bounds
+}
+
 export interface PageFlags {
   /** the page has an image large enough to be content, not decoration */
   hasImage: boolean
@@ -19,6 +32,18 @@ export interface TextOptions {
 
 export interface RenderOptions {
   scale?: number
+  /** render only this part of the page, in points from the bottom-left corner of the page as displayed */
+  clip?: Bounds
+}
+
+export interface AsyncRenderOptions extends RenderOptions {
+  /** an AbortSignal (from bare-abort-controller or any WHATWG implementation) that cancels the render */
+  signal?: {
+    readonly aborted: boolean
+    readonly reason?: unknown
+    addEventListener(type: 'abort', listener: () => void): void
+    removeEventListener?(type: 'abort', listener: () => void): void
+  }
 }
 
 export type LoadErrorCode = 'FILE' | 'FORMAT' | 'PASSWORD' | 'SECURITY' | 'PAGE' | 'UNKNOWN'
@@ -159,6 +184,51 @@ export interface Field {
   options?: string[]
   editable?: boolean
   multiSelect?: boolean
+  /** each widget of the field: its page and where it sits on it */
+  widgets: Array<Bounds & { page: number }>
+}
+
+export interface Metadata {
+  title: string | null
+  author: string | null
+  subject: string | null
+  keywords: string | null
+  creator: string | null
+  producer: string | null
+  /** raw PDF date string, such as D:20240131120000Z */
+  creationDate: string | null
+  modDate: string | null
+}
+
+export interface OutlineItem {
+  title: string
+  /** the page the bookmark opens, or null when it points elsewhere */
+  page: number | null
+  children: OutlineItem[]
+}
+
+export interface Link extends Bounds {
+  /** set for a link to a web address */
+  uri: string | null
+  /** set for a link to a page of this document */
+  page: number | null
+}
+
+export interface TextMatch {
+  /** position of the match in the page's text layer, as extractText with hyphens: 'raw' counts it */
+  index: number
+  length: number
+  /** one rectangle per line the match spans */
+  rects: Bounds[]
+}
+
+export interface TextSpan extends Bounds {
+  text: string
+}
+
+export interface FindOptions {
+  matchCase?: boolean
+  wholeWord?: boolean
 }
 
 export type FieldValues = Record<string, string | number | boolean | string[]>
@@ -176,9 +246,9 @@ export class Doc {
   pageFlags(page: number): PageFlags
   /** rasterize one page to RGBA; `scale` maps points to pixels (1 = 72 DPI) */
   render(page: number, opts?: RenderOptions): RasterImage
-  renderAsync(page: number, opts?: RenderOptions): Promise<RasterImage>
-  /** the page's embedded raster images, each rendered to RGBA */
-  extractImages(page: number): RasterImage[]
+  renderAsync(page: number, opts?: AsyncRenderOptions): Promise<RasterImage>
+  /** the page's embedded raster images, each rendered to RGBA, with where each sits on the page */
+  extractImages(page: number): ExtractedImage[]
   /** the page's text layer as a string, empty when the page has none (a scan) */
   extractText(page: number, opts?: TextOptions): string
   extractTextAsync(page: number, opts?: TextOptions): Promise<string>
@@ -195,6 +265,23 @@ export class Doc {
   fieldsAsync(): Promise<Field[]>
   fillFields(values: FieldValues): Field[]
   fillFieldsAsync(values: FieldValues): Promise<Field[]>
+  /** remove pages; a page listed twice is removed once */
+  deletePages(pages: number[]): void
+  deletePagesAsync(pages: number[]): Promise<void>
+  /** move the listed pages, in that order, so the first one lands at index `to` */
+  movePages(pages: number[], to: number): void
+  movePagesAsync(pages: number[], to: number): Promise<void>
+  /** draw annotations and form widgets into the page content and remove them */
+  flatten(opts?: PageOptions): void
+  flattenAsync(opts?: PageOptions): Promise<void>
+  metadata(): Metadata
+  outline(): OutlineItem[]
+  /** the page's label, such as 'iv' or 'A-3', or null when the document has none */
+  pageLabel(page: number): string | null
+  links(page: number): Link[]
+  findText(page: number, query: string, opts?: FindOptions): TextMatch[]
+  /** each run of text PDFium lays out on the page, with its rectangle */
+  textSpans(page: number): TextSpan[]
   addPage(opts?: AddPageOptions): number
   loadFont(font: string | Uint8Array): number
   measureText(text: string, font: number, size: number): number

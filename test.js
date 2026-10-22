@@ -45,6 +45,45 @@ function imagePdf() {
   ])
 }
 
+function formXObjectPdf() {
+  const page = 'q 1 0 0 1 0 0 cm /Fm0 Do Q'
+  const form = 'q 100 0 0 50 20 30 cm /Im0 Do Q BT /F1 12 Tf 20 120 Td (Inside a form) Tj ET'
+  const px = '\xff\x00\x00\x00\xff\x00\x00\x00\xff\xff\xff\xff'
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] /Contents 4 0 R /Resources << /XObject << /Fm0 5 0 R >> >> >>',
+    `<< /Length ${page.length} >>\nstream\n${page}\nendstream`,
+    `<< /Type /XObject /Subtype /Form /BBox [0 0 200 200] /Matrix [2 0 0 2 10 10] /Resources << /XObject << /Im0 6 0 R >> /Font << /F1 7 0 R >> >> /Length ${form.length} >>\nstream\n${form}\nendstream`,
+    `<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${px.length} >>\nstream\n${px}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
+function navigationPdf() {
+  const one = 'BT /F1 24 Tf 40 100 Td (Page One) Tj ET'
+  const two = 'BT /F1 24 Tf 40 100 Td (Page Two) Tj ET'
+  return buildPdf(
+    [
+      '<< /Type /Catalog /Pages 2 0 R /Outlines 8 0 R /PageLabels << /Nums [0 << /S /r >> 1 << /P (A-) /S /D >>] >> >>',
+      '<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 7 0 R >> >> /Annots [12 0 R 13 0 R] >>',
+      `<< /Length ${one.length} >>\nstream\n${one}\nendstream`,
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>',
+      `<< /Length ${two.length} >>\nstream\n${two}\nendstream`,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+      '<< /Type /Outlines /First 9 0 R /Last 10 0 R /Count 3 >>',
+      '<< /Title (Intro) /Parent 8 0 R /Next 10 0 R /Dest [3 0 R /Fit] /First 11 0 R /Last 11 0 R /Count 1 >>',
+      '<< /Title (Second) /Parent 8 0 R /Prev 9 0 R /Dest [5 0 R /Fit] >>',
+      '<< /Title (Detail) /Parent 9 0 R /Dest [5 0 R /Fit] >>',
+      '<< /Type /Annot /Subtype /Link /Rect [10 10 60 30] /A << /S /URI /URI (https://example.com/docs) >> >>',
+      '<< /Type /Annot /Subtype /Link /Rect [10 150 60 170] /Dest [5 0 R /Fit] >>',
+      '<< /Title (A navigation test) /Author (bare-pdfium) /Subject (Outlines, labels and links) >>'
+    ],
+    '/Info 14 0 R '
+  )
+}
+
 function twoPageTextPdf() {
   const one = 'BT /F1 24 Tf 40 100 Td (Page One) Tj ET'
   const two = 'BT /F1 24 Tf 40 100 Td (Page Two) Tj ET'
@@ -132,6 +171,58 @@ test('pageFlags and extractImages find a page image', (t) => {
   const [first] = images
   t.is(first.data.length, first.width * first.height * 4, 'extracted image is RGBA')
   doc.close()
+})
+
+test('extractImages reports where each image sits on the page', (t) => {
+  const doc = addon.open(imagePdf())
+  const [image] = doc.extractImages(0)
+  t.alike(image.bounds, { x: 0, y: 0, width: 200, height: 200 })
+  doc.close()
+})
+
+test('pageFlags and extractImages look inside form XObjects', (t) => {
+  const doc = addon.open(formXObjectPdf())
+  t.alike(doc.pageFlags(0), { hasImage: true, hasText: true })
+  const images = doc.extractImages(0)
+  t.is(images.length, 1, 'the image drawn by the form is found')
+  t.alike(
+    images[0].bounds,
+    { x: 50, y: 70, width: 200, height: 100 },
+    'bounds include the form matrix'
+  )
+  doc.close()
+})
+
+test('pageFlags hasText agrees with the text layer on every fixture page', (t) => {
+  const path = require('bare-path')
+  let pages = 0
+  for (const dir of ['test/fixtures/pdfium', 'test/fixtures/hostile']) {
+    for (const name of fs
+      .readdirSync(path.join(__dirname, dir))
+      .filter((f) => f.endsWith('.pdf'))) {
+      let doc
+      try {
+        doc = addon.open(fs.readFileSync(path.join(__dirname, dir, name)))
+      } catch {
+        continue
+      }
+      for (let page = 0; page < Math.min(doc.pageCount(), 20); page++) {
+        let flags, text
+        try {
+          flags = doc.pageFlags(page)
+          text = doc.extractText(page, { hyphens: 'raw' })
+        } catch {
+          continue
+        }
+        pages++
+        if (flags.hasText !== text.length > 0) {
+          t.fail(`${name} page ${page}: hasText ${flags.hasText}`)
+        }
+      }
+      doc.close()
+    }
+  }
+  t.ok(pages > 100, `${pages} pages agree`)
 })
 
 test('extractText returns the page text layer', (t) => {
@@ -318,6 +409,88 @@ test('renderAsync matches render', async (t) => {
   t.is(actual.width, expected.width)
   t.is(actual.height, expected.height)
   t.ok(Buffer.compare(actual.data, expected.data) === 0, 'same pixels')
+  doc.close()
+})
+
+function busyDoc() {
+  const doc = addon.create()
+  doc.addPage({ width: 600, height: 600 })
+  const items = []
+  for (let i = 0; i < 40000; i++) {
+    items.push({
+      type: 'rect',
+      x: (i * 7) % 590,
+      y: (i * 13) % 590,
+      width: 6,
+      height: 6,
+      fill: [i % 255, 80, 160],
+      opacity: 0.5
+    })
+  }
+  doc.draw(0, items)
+  return doc
+}
+
+test('render clip draws one region at the full-page scale', (t) => {
+  const doc = busyDoc()
+  const full = doc.render(0, { scale: 2 })
+  const tile = doc.render(0, { scale: 2, clip: { x: 100, y: 200, width: 150, height: 100 } })
+  t.alike([tile.width, tile.height], [300, 200])
+  let same = true
+  for (let y = 0; y < tile.height && same; y++) {
+    const row = tile.data.subarray(y * tile.width * 4, (y + 1) * tile.width * 4)
+    const start = ((y + 600) * full.width + 200) * 4
+    same = row.equals(full.data.subarray(start, start + tile.width * 4))
+  }
+  t.ok(same, 'the tile matches the same crop of a full render')
+  doc.close()
+})
+
+test('render clip validates its box', (t) => {
+  const doc = addon.open(textPdf())
+  t.exception.all(
+    () => doc.render(0, { clip: { x: 0, y: 0, width: 0, height: 10 } }),
+    /greater than 0/
+  )
+  t.exception.all(() => doc.render(0, { clip: { x: 'a', y: 0, width: 5, height: 10 } }), /clip x/)
+  t.exception.all(() => doc.render(0, { clip: 5 }), /clip must be an object/)
+  doc.close()
+})
+
+test('renderAsync with a signal renders the same pixels', async (t) => {
+  const { AbortController } = require('bare-abort-controller')
+  const doc = busyDoc()
+  const plain = doc.render(0, { scale: 1 })
+  const signalled = await doc.renderAsync(0, { scale: 1, signal: new AbortController().signal })
+  t.ok(plain.data.equals(signalled.data))
+  doc.close()
+})
+
+test('renderAsync rejects with ABORTED when its signal aborts', async (t) => {
+  const { AbortController } = require('bare-abort-controller')
+  const doc = busyDoc()
+
+  const early = new AbortController()
+  early.abort(new Error('before'))
+  await t.exception(doc.renderAsync(0, { signal: early.signal }), /aborted/)
+
+  const queued = new AbortController()
+  const first = doc.renderAsync(0, { scale: 3 })
+  const second = doc.renderAsync(0, { scale: 3, signal: queued.signal })
+  queued.abort(new Error('scrolled away'))
+  await first
+  const err = await second.catch((e) => e)
+  t.is(err.code, 'ABORTED', 'a queued render is skipped')
+  t.is(err.cause.message, 'scrolled away', 'the reason is kept as the cause')
+
+  const running = new AbortController()
+  const started = Date.now()
+  const pending = doc.renderAsync(0, { scale: 4, signal: running.signal })
+  setTimeout(() => running.abort(), 5)
+  const stopped = await pending.catch((e) => e)
+  t.is(stopped.code, 'ABORTED', `a running render stops (after ${Date.now() - started} ms)`)
+
+  await t.exception.all(doc.renderAsync(0, { signal: {} }), /AbortSignal/)
   doc.close()
 })
 
@@ -600,6 +773,108 @@ test('fields lists the form with types, values and options', (t) => {
   t.alike(byName.size.options, ['S', 'M', 'L'])
   t.is(byName.id.value, 'A-1')
   t.is(byName.id.readOnly, true)
+})
+
+test('fields reports where each widget sits on its page', (t) => {
+  const doc = addon.open(formPdf())
+  const name = doc.fields().find((field) => field.name === 'name')
+  t.alike(name.widgets, [{ page: 0, x: 20, y: 250, width: 180, height: 20 }])
+  doc.close()
+})
+
+test('metadata reads the document information', (t) => {
+  const doc = addon.open(navigationPdf())
+  const info = doc.metadata()
+  t.is(info.title, 'A navigation test')
+  t.is(info.author, 'bare-pdfium')
+  t.is(info.subject, 'Outlines, labels and links')
+  t.is(info.keywords, null, 'a missing entry is null')
+  doc.close()
+})
+
+test('outline returns the bookmark tree with target pages', (t) => {
+  const doc = addon.open(navigationPdf())
+  t.alike(doc.outline(), [
+    { title: 'Intro', page: 0, children: [{ title: 'Detail', page: 1, children: [] }] },
+    { title: 'Second', page: 1, children: [] }
+  ])
+  t.alike(addon.open(textPdf()).outline(), [], 'a PDF without an outline returns an empty list')
+  doc.close()
+})
+
+test('pageLabel follows the document page labels', (t) => {
+  const doc = addon.open(navigationPdf())
+  t.is(doc.pageLabel(0), 'i')
+  t.is(doc.pageLabel(1), 'A-1')
+  t.is(addon.open(textPdf()).pageLabel(0), null, 'no labels gives null')
+  doc.close()
+})
+
+test('links lists web and in-document links with their areas', (t) => {
+  const doc = addon.open(navigationPdf())
+  t.alike(doc.links(0), [
+    { x: 10, y: 10, width: 50, height: 20, uri: 'https://example.com/docs', page: null },
+    { x: 10, y: 150, width: 50, height: 20, uri: null, page: 1 }
+  ])
+  t.alike(doc.links(1), [])
+  doc.close()
+})
+
+test('findText returns each match with its rectangles', (t) => {
+  const doc = addon.open(textPdf())
+  const [match, ...rest] = doc.findText(0, 'pdf')
+  t.is(rest.length, 0)
+  t.is(match.index, 6)
+  t.is(match.length, 3)
+  t.is(match.rects.length, 1)
+  const [rect] = match.rects
+  t.ok(rect.x > 40 && rect.x + rect.width < 200, 'the match sits inside the line')
+  t.ok(rect.y < 100 + 24 && rect.y + rect.height > 100, 'the match covers the baseline')
+  t.is(doc.findText(0, 'pdf', { matchCase: true }).length, 0, 'matchCase is honoured')
+  t.is(doc.findText(0, 'Hel', { wholeWord: true }).length, 0, 'wholeWord is honoured')
+  t.exception.all(() => doc.findText(0, ''), /non-empty string/)
+  doc.close()
+})
+
+test('textSpans gives each run of text and where it is', (t) => {
+  const doc = addon.open(textPdf())
+  const spans = doc.textSpans(0)
+  t.is(spans.length, 1)
+  t.is(spans[0].text, 'Hello PDF')
+  t.ok(spans[0].x >= 40 && spans[0].x < 45, 'starts where the text starts')
+  t.alike(addon.open(imagePdf()).textSpans(0), [], 'a page with no text layer has no spans')
+  doc.close()
+})
+
+test('deletePages and movePages change the page order', async (t) => {
+  const pages = (doc) => [...doc.textPages()].map(({ text }) => text)
+  const doc = addon.open(twoPageTextPdf())
+  doc.importPages(addon.open(textPdf()))
+  t.alike(pages(doc), ['Page One', 'Page Two', 'Hello PDF'])
+  doc.movePages([2], 0)
+  t.alike(pages(doc), ['Hello PDF', 'Page One', 'Page Two'])
+  doc.deletePages([1, 1])
+  t.alike(pages(doc), ['Hello PDF', 'Page Two'], 'a page listed twice is deleted once')
+  await doc.movePagesAsync([0], 1)
+  t.alike(pages(doc), ['Page Two', 'Hello PDF'])
+  await doc.deletePagesAsync([0])
+  t.alike(pages(doc), ['Hello PDF'])
+  t.exception.all(() => doc.deletePages(), /array of page indexes/)
+  t.exception.all(() => doc.movePages([0], 1), /from 0 to 0/)
+  doc.close()
+})
+
+test('flatten turns form widgets into page content', async (t) => {
+  const doc = addon.open(formPdf())
+  t.ok(doc.fields().length > 0)
+  doc.flatten()
+  t.alike(doc.fields(), [], 'the widgets are gone')
+  t.ok(doc.render(0).width > 0, 'the page still renders')
+  doc.close()
+  const other = addon.open(formPdf())
+  await other.flattenAsync({ pages: [0] })
+  t.alike(other.fields(), [])
+  other.close()
 })
 
 test('fields is empty for a PDF without a form', (t) => {

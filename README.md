@@ -37,7 +37,7 @@ doc.pageFlags(0)
 // => { width, height, data }, RGBA on a white background
 doc.render(0, { scale: 2 })
 
-// => [{ width, height, data }, ...], the page's embedded images
+// => [{ width, height, data, bounds: { x, y, width, height } }, ...], the page's embedded images
 doc.extractImages(0)
 
 // => string, the page's text layer ('' if none)
@@ -56,10 +56,17 @@ doc.close()
   twice. The returned handle is identical either way.
 - `pageFlags(page)` — `hasImage` is true when the page has an image covering more
   than ~5% of it (decoration is ignored); `hasText` is false for a scanned page.
-- `render(page, { scale })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
-  is 150 DPI. `data` is a row-major RGBA buffer, `width*height*4` bytes.
+  Both look inside form XObjects, and neither builds the text layer, so checking
+  every page of a long document is cheap.
+- `render(page, { scale, clip })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
+  is 150 DPI. `data` is a row-major RGBA buffer, `width*height*4` bytes. `clip`
+  (`{ x, y, width, height }` in points from the bottom-left corner of the page
+  as displayed) renders only that region, at the same scale, so a viewer can
+  draw a zoomed-in page as tiles instead of one bitmap past the `LIMIT`.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
-  with their transforms), each RGBA. Images under 8px are skipped. An image over
+  with their transforms), each RGBA, including images drawn by form XObjects.
+  `bounds` is where the image sits on the page, in PDF points from the
+  bottom-left corner. Images under 8px are skipped. An image over
   40 megapixels, or more than 160 megapixels of images on one page, throws
   `LIMIT`; render the page with a smaller `scale` instead.
 - `extractText(page, opts)` — the page's text layer as a string, empty for a page
@@ -100,6 +107,34 @@ doc.close()
 doc.extractText(0, { hyphens: 'keep', clip: true })
 ```
 
+### Navigation and text positions
+
+```js
+// => { title, author, subject, keywords, creator, producer, creationDate, modDate }, null for missing entries
+doc.metadata()
+
+// => [{ title, page, children: [...] }, ...], the bookmark tree
+doc.outline()
+
+// => 'iv', 'A-3', ... or null
+doc.pageLabel(0)
+
+// => [{ x, y, width, height, uri, page }, ...], web links have a uri, internal ones a page
+doc.links(0)
+
+// => [{ index, length, rects: [{ x, y, width, height }, ...] }, ...]
+doc.findText(0, 'revenue', { matchCase: false, wholeWord: false })
+
+// => [{ text, x, y, width, height }, ...], each run of text and where it is
+doc.textSpans(0)
+```
+
+All positions are in PDF points from the bottom-left corner of the page.
+`findText` gives one rectangle per line a match spans, ready to draw as a
+highlight; its `index` and `length` count characters of the text layer as
+`extractText(page, { hyphens: 'raw' })` returns it. `textSpans` gives the runs
+PDFium lays out, which is what a viewer needs to let people select text.
+
 ### Async
 
 Every call above is synchronous and blocks the event loop while PDFium works. For
@@ -117,6 +152,24 @@ for await (const { page, text } of doc.textPagesAsync()) {
 - `renderAsync(page, opts)`, `extractTextAsync(page, opts)` and
   `textPagesAsync(opts)` return the same results as `render`, `extractText` and
   `textPages`.
+- `renderAsync` takes a `signal` from an `AbortController` (for example
+  [`bare-abort-controller`](https://github.com/holepunchto/bare-abort-controller)).
+  Aborting rejects with `ABORTED`, the signal's `reason` as its `cause`: a render
+  still waiting in the queue never starts, and one already running stops at
+  PDFium's next pause point and frees the lock for the next job.
+
+```js
+const { AbortController } = require('bare-abort-controller')
+
+const controller = new AbortController()
+const tile = doc.renderAsync(0, {
+  scale: 4,
+  clip: { x: 0, y: 400, width: 200, height: 200 },
+  signal: controller.signal
+})
+controller.abort() // the user scrolled past this page
+```
+
 - PDFium is not thread-safe, so every PDFium call — sync or async, across all
   open documents — goes through one lock, and async jobs run one at a time. A sync
   call made while an async job is running waits for that job to finish.
@@ -157,6 +210,7 @@ matching messages. Async calls reject with the same codes.
 | `PAGE`             | a page, or its text layer, could not be loaded                                                               |
 | `CLOSED`           | the document was closed, including before a queued async call ran                                            |
 | `LIMIT`            | `render` past 20000 px per side or 40 MP, or `extractImages` past 40 MP for one image or 160 MP for the page |
+| `ABORTED`          | `renderAsync` was cancelled through its `signal`                                                             |
 | `MEMORY`           | a bitmap could not be allocated                                                                              |
 | `UNSUPPORTED_TEXT` | text the font cannot draw: outside the built-in fonts, or missing from a TrueType                            |
 | `FONT`             | a font failed to load, or a draw item names one the document has not loaded                                  |
@@ -210,10 +264,17 @@ out.importPages(doc, { pages: [2, 0], at: 0 })
 // turn pages clockwise by a multiple of 90, added to their current rotation
 doc.rotate(90, { pages: [0] })
 
+// remove pages, or move them so the first listed lands at index `to`
+doc.deletePages([3, 4])
+doc.movePages([5, 6], 0)
+
+// draw annotations and form widgets into the page content and drop them
+doc.flatten({ pages: [0] })
+
 // stamp text across the middle of each page
 doc.watermark('DRAFT', { angle: 45, opacity: 0.3, position: 'over' })
 
-// => [{ name, type, value, page, readOnly, required, options? }, ...]
+// => [{ name, type, value, page, readOnly, required, options?, widgets: [{ page, x, y, width, height }] }, ...]
 doc.fields()
 
 // set form fields by name, then read them back
@@ -313,10 +374,13 @@ encrypted input.
 `merge`, `extractPages` and `importPages` copy each page with its widgets, but
 not the document's form (`/AcroForm`), so the copied fields no longer show up
 in `fields()` and cannot be filled. Fill the form before copying pages.
+`deletePages` and `movePages` change the document in place, so its form keeps
+working; use them rather than rebuilding a document to drop or reorder pages.
 
 Each edit also has an async form that runs on a libuv worker thread, the same way
 `renderAsync` does: `importPagesAsync`, `rotateAsync`, `watermarkAsync`,
-`fieldsAsync`, `fillFieldsAsync` and `saveAsync` on a document, and `mergeAsync`,
+`deletePagesAsync`, `movePagesAsync`, `flattenAsync`, `fieldsAsync`,
+`fillFieldsAsync` and `saveAsync` on a document, and `mergeAsync`,
 `extractPagesAsync`, `rotateAsync`, `decryptAsync`, `watermarkAsync`,
 `fieldsAsync`, `fillFieldsAsync` and `encryptAsync` as one-shots. They resolve to what the sync
 form returns.
@@ -373,7 +437,10 @@ const same = pdfium.compose([
   source prints its alt text.
 - Images are PNG or JPEG bytes. JPEGs are embedded as they are, and PNGs are
   decoded with [`bare-png`](https://github.com/holepunchto/bare-png), loaded only
-  when one is used.
+  when one is used. A PNG with no transparency is stored without an alpha mask.
+- An image used more than once is stored once: every use draws the same
+  embedded copy. `compose` does this for repeated blocks with the same `data`;
+  `draw` does it within a document when you pass the same `Buffer` again.
 
 | option        | default       | effect                                                                                            |
 | ------------- | ------------- | ------------------------------------------------------------------------------------------------- |
@@ -467,7 +534,10 @@ XMP `/Metadata` stream when an encrypted document is saved, which PDFium skips.
 `form-expansion-budget` caps the form XObjects one page may expand to 100000,
 since a self-referencing form otherwise grows exponentially within PDFium's
 nesting limit. `page-object-number` adds `FPDFPage_GetObjectNumber`, which
-lets edits find a page listed twice in the page tree. Then build PDFium for a target from
+lets edits find a page listed twice in the page tree. `lazy-shared-object-scan`
+makes regenerating a page's content walk the document's object tree only when
+the page's content streams might be shared, instead of on every page, which made
+`watermark` and `draw` across many pages quadratic. Then build PDFium for a target from
 [`gn/target/`](gn/target). Revert the patches with `git apply --reverse` before the next
 `gclient sync`, which needs a clean tree:
 
