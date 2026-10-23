@@ -278,6 +278,8 @@ export class Doc {
   outline(): OutlineItem[]
   /** the page's label, such as 'iv' or 'A-3', or null when the document has none */
   pageLabel(page: number): string | null
+  /** the page's clockwise rotation in degrees: 0, 90, 180 or 270 */
+  pageRotation(page: number): 0 | 90 | 180 | 270
   links(page: number): Link[]
   findText(page: number, query: string, opts?: FindOptions): TextMatch[]
   /** each run of text PDFium lays out on the page, with its rectangle */
