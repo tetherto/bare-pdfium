@@ -683,6 +683,22 @@ test('rotate only touches the pages it is given', (t) => {
   rotated.close()
 })
 
+test('pageRotation reports the clockwise rotation of each page', (t) => {
+  const doc = addon.open(addon.merge([sizedPdf(200, 100, 'a'), sizedPdf(200, 100, 'b')]))
+  t.is(doc.pageRotation(0), 0)
+  doc.rotate(90, { pages: [0] })
+  doc.rotate(-90, { pages: [1] })
+  t.is(doc.pageRotation(0), 90)
+  t.is(doc.pageRotation(1), 270)
+  doc.rotate(90, { pages: [0] })
+  t.is(doc.pageRotation(0), 180)
+  t.is(
+    codeOf(() => doc.pageRotation(2)),
+    'PAGE_RANGE'
+  )
+  doc.close()
+})
+
 test('rotate rejects angles that are not a multiple of 90', (t) => {
   t.exception.all(() => addon.rotate(textPdf(), 45), /multiple of 90/)
 })
