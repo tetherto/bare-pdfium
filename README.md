@@ -56,7 +56,9 @@ doc.close()
   twice. The returned handle is identical either way.
 - `pageFlags(page)` — `hasImage` is true when the page's images cover more than
   ~5% of it between them, so a figure sliced into tiles counts while a lone
-  decoration does not; `hasText` is false for a scanned page.
+  decoration does not. An image drawn under 8pt across is a rule or a sliver and
+  does not count, as `imageBounds` and `extractImages` leave it out too.
+  `hasText` is false for a scanned page.
   Both look inside form XObjects, and neither builds the text layer, so checking
   every page of a long document is cheap.
 - `render(page, { scale, clip })` — `scale` maps points to pixels: `1` is 72 DPI, `2`

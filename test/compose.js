@@ -217,6 +217,28 @@ test('pageFlags counts a figure sliced into tiles as one image', (t) => {
   doc.close()
 })
 
+test('thin images add up to no picture, in pageFlags and imageBounds alike', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 400, height: 400 })
+  // ten strips, each 6pt tall: 11% of the page between them, none a picture on its own
+  const strip = (y) => ({
+    type: 'image',
+    image: gradientPng(60, 2),
+    x: 50,
+    y,
+    width: 300,
+    height: 6
+  })
+  doc.draw(
+    0,
+    Array.from({ length: 10 }, (_, i) => strip(50 + i * 20))
+  )
+  t.is(doc.pageFlags(0).hasImage, false)
+  t.alike(doc.imageBounds(0), [])
+  t.alike(doc.extractImages(0), [])
+  doc.close()
+})
+
 test('imageBounds of a page with no images is empty', (t) => {
   const doc = pdfium.create()
   doc.addPage()

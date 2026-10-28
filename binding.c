@@ -881,6 +881,12 @@ bare_pdfium__object_box(FPDF_PAGEOBJECT object, const bare_pdfium_matrix_t *m, b
   return true;
 }
 
+// drawn under 8pt across, an image is a rule or a sliver; extractImages skips it once rendered
+static bool
+bare_pdfium__drawn_image(const bare_pdfium_box_t *box) {
+  return box->right - box->left >= BARE_PDFIUM_MIN_IMAGE_PX && box->top - box->bottom >= BARE_PDFIUM_MIN_IMAGE_PX;
+}
+
 static bool
 bare_pdfium__visit_objects(FPDF_PAGE page, FPDF_PAGEOBJECT form, const bare_pdfium_matrix_t *m, int depth, bare_pdfium_visit_fn fn, void *context) {
   int count = form ? FPDFFormObj_CountObjects(form) : FPDFPage_CountObjects(page);
@@ -920,7 +926,7 @@ bare_pdfium__flag_object(FPDF_PAGEOBJECT object, int type, const bare_pdfium_box
   bare_pdfium_flags_t *flags = (bare_pdfium_flags_t *) context;
   if (type == FPDF_PAGEOBJ_TEXT && box && (box->right > box->left || box->top > box->bottom)) {
     flags->has_text = true;
-  } else if (type == FPDF_PAGEOBJ_IMAGE && !flags->has_image) {
+  } else if (type == FPDF_PAGEOBJ_IMAGE && !flags->has_image && (box == NULL || bare_pdfium__drawn_image(box))) {
     // summed, so a figure sliced into tiles counts as the one picture it is
     flags->image_area += box ? (box->right - box->left) * (box->top - box->bottom) : 0;
     if (box == NULL || flags->page_area <= 0 || flags->image_area >= BARE_PDFIUM_MIN_IMAGE_FRACTION * flags->page_area) {
@@ -1089,9 +1095,7 @@ bare_pdfium_image_bounds(js_env_t *env, js_callback_info_t *info) {
   size_t count = 0;
   for (size_t i = 0; !found.failed && i < found.count; i++) {
     const bare_pdfium_box_t *box = &found.boxes[i];
-    // the size it is drawn at, in points: what extractImages renders, without rendering it
-    if (box->right - box->left < BARE_PDFIUM_MIN_IMAGE_PX || box->top - box->bottom < BARE_PDFIUM_MIN_IMAGE_PX) continue;
-    found.boxes[count++] = *box;
+    if (bare_pdfium__drawn_image(box)) found.boxes[count++] = *box;
   }
 
   FPDF_ClosePage(page);
