@@ -54,8 +54,9 @@ doc.close()
   holds it for the document's life; `openFile` hands PDFium a read callback so it
   pulls pages from disk on demand, which keeps a large PDF from sitting in memory
   twice. The returned handle is identical either way.
-- `pageFlags(page)` — `hasImage` is true when the page has an image covering more
-  than ~5% of it (decoration is ignored); `hasText` is false for a scanned page.
+- `pageFlags(page)` — `hasImage` is true when the page's images cover more than
+  ~5% of it between them, so a figure sliced into tiles counts while a lone
+  decoration does not; `hasText` is false for a scanned page.
   Both look inside form XObjects, and neither builds the text layer, so checking
   every page of a long document is cheap.
 - `render(page, { scale, clip })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
@@ -63,6 +64,11 @@ doc.close()
   (`{ x, y, width, height }` in points from the bottom-left corner of the page
   as displayed) renders only that region, at the same scale, so a viewer can
   draw a zoomed-in page as tiles instead of one bitmap past the `LIMIT`.
+- `imageBounds(page)` — where each of the page's embedded raster images sits, as
+  `{ x, y, width, height }` in PDF points from the bottom-left corner, including
+  images drawn by form XObjects. Nothing is decoded, so it is cheap enough to
+  find a page's figures before rendering just that part with `clip`. Images
+  drawn smaller than 8pt are skipped, as `extractImages` skips them.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
   with their transforms), each RGBA, including images drawn by form XObjects.
   `bounds` is where the image sits on the page, in PDF points from the

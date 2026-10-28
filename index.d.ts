@@ -19,7 +19,7 @@ export interface ExtractedImage extends RasterImage {
 }
 
 export interface PageFlags {
-  /** the page has an image large enough to be content, not decoration */
+  /** the page's images cover enough of it between them to be content, not decoration */
   hasImage: boolean
   /** the page has an extractable text layer (false for a scanned page) */
   hasText: boolean
@@ -247,6 +247,8 @@ export class Doc {
   /** rasterize one page to RGBA; `scale` maps points to pixels (1 = 72 DPI) */
   render(page: number, opts?: RenderOptions): RasterImage
   renderAsync(page: number, opts?: AsyncRenderOptions): Promise<RasterImage>
+  /** where each of the page's embedded raster images sits on the page, without decoding them */
+  imageBounds(page: number): Bounds[]
   /** the page's embedded raster images, each rendered to RGBA, with where each sits on the page */
   extractImages(page: number): ExtractedImage[]
   /** the page's text layer as a string, empty when the page has none (a scan) */

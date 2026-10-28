@@ -183,6 +183,48 @@ test('extractImages returns a drawn image at full size with its place on the pag
   t.alike(image.bounds, { x: 20, y: 30, width: 160, height: 80 })
 })
 
+test('imageBounds finds a drawn image where extractImages does, without decoding it', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 300, height: 300 })
+  doc.draw(0, [{ type: 'image', image: gradientPng(80, 40), x: 20, y: 30, width: 160, height: 80 }])
+  t.alike(doc.imageBounds(0), [{ x: 20, y: 30, width: 160, height: 80 }])
+  t.alike(
+    doc.imageBounds(0),
+    doc.extractImages(0).map((image) => image.bounds)
+  )
+  doc.close()
+})
+
+test('pageFlags counts a figure sliced into tiles as one image', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 400, height: 400 })
+  doc.addPage({ width: 400, height: 400 })
+  // each tile is 4% of the page, under the decoration cutoff on its own
+  const tile = (x, y) => ({
+    type: 'image',
+    image: gradientPng(40, 40),
+    x,
+    y,
+    width: 80,
+    height: 80
+  })
+  doc.draw(0, [tile(100, 100), tile(180, 100), tile(100, 180), tile(180, 180)])
+  doc.draw(1, [tile(100, 100)])
+  t.is(doc.pageFlags(0).hasImage, true, 'four tiles make a figure')
+  t.is(doc.imageBounds(0).length, 4)
+  t.is(doc.pageFlags(1).hasImage, false, 'one small tile stays decoration')
+  t.is(doc.imageBounds(1).length, 1, 'imageBounds still reports it')
+  doc.close()
+})
+
+test('imageBounds of a page with no images is empty', (t) => {
+  const doc = pdfium.create()
+  doc.addPage()
+  doc.draw(0, [{ type: 'rect', x: 10, y: 10, width: 100, height: 100 }])
+  t.alike(doc.imageBounds(0), [])
+  doc.close()
+})
+
 test('draw rejects bad items', (t) => {
   const doc = pdfium.create()
   doc.addPage()

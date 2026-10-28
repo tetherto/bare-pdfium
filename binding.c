@@ -910,6 +910,7 @@ bare_pdfium__visit_page(FPDF_PAGE page, bare_pdfium_visit_fn fn, void *context) 
 
 typedef struct {
   double page_area;
+  double image_area;
   bool has_image;
   bool has_text;
 } bare_pdfium_flags_t;
@@ -920,8 +921,9 @@ bare_pdfium__flag_object(FPDF_PAGEOBJECT object, int type, const bare_pdfium_box
   if (type == FPDF_PAGEOBJ_TEXT && box && (box->right > box->left || box->top > box->bottom)) {
     flags->has_text = true;
   } else if (type == FPDF_PAGEOBJ_IMAGE && !flags->has_image) {
-    double area = box ? (box->right - box->left) * (box->top - box->bottom) : 0;
-    if (box == NULL || flags->page_area <= 0 || area >= BARE_PDFIUM_MIN_IMAGE_FRACTION * flags->page_area) {
+    // summed, so a figure sliced into tiles counts as the one picture it is
+    flags->image_area += box ? (box->right - box->left) * (box->top - box->bottom) : 0;
+    if (box == NULL || flags->page_area <= 0 || flags->image_area >= BARE_PDFIUM_MIN_IMAGE_FRACTION * flags->page_area) {
       flags->has_image = true;
     }
   }
@@ -1053,6 +1055,68 @@ bare_pdfium__box_value(js_env_t *env, const bare_pdfium_box_t *box) {
     err = js_set_named_property(env, result, names[i], value);
     assert(err == 0);
   }
+  return result;
+}
+
+static js_value_t *
+bare_pdfium_image_bounds(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  bare_pdfium_doc_t *handle = bare_pdfium__handle(env, argv[0]);
+  if (!bare_pdfium__usable(env, handle)) return NULL;
+
+  int64_t page_index;
+  err = js_get_value_int64(env, argv[1], &page_index);
+  assert(err == 0);
+
+  bare_pdfium__lock();
+
+  FPDF_PAGE page = FPDF_LoadPage(handle->doc, (int) page_index);
+  if (page == NULL) {
+    bare_pdfium__unlock();
+    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE);
+    return NULL;
+  }
+
+  bare_pdfium_found_t found = {0};
+  bare_pdfium__visit_page(page, bare_pdfium__collect_image, &found);
+  size_t count = 0;
+  for (size_t i = 0; !found.failed && i < found.count; i++) {
+    const bare_pdfium_box_t *box = &found.boxes[i];
+    // the size it is drawn at, in points: what extractImages renders, without rendering it
+    if (box->right - box->left < BARE_PDFIUM_MIN_IMAGE_PX || box->top - box->bottom < BARE_PDFIUM_MIN_IMAGE_PX) continue;
+    found.boxes[count++] = *box;
+  }
+
+  FPDF_ClosePage(page);
+
+  bare_pdfium__unlock();
+
+  free(found.objects);
+
+  if (found.failed) {
+    free(found.boxes);
+    bare_pdfium__throw(env, BARE_PDFIUM_E_MEMORY);
+    return NULL;
+  }
+
+  js_value_t *result;
+  err = js_create_array(env, &result);
+  assert(err == 0);
+
+  for (size_t i = 0; i < count; i++) {
+    err = js_set_element(env, result, (uint32_t) i, bare_pdfium__box_value(env, &found.boxes[i]));
+    assert(err == 0);
+  }
+
+  free(found.boxes);
+
   return result;
 }
 
@@ -3438,6 +3502,7 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("pageSize", bare_pdfium_page_size)
   V("pageFlags", bare_pdfium_page_flags)
   V("render", bare_pdfium_render)
+  V("imageBounds", bare_pdfium_image_bounds)
   V("extractImages", bare_pdfium_extract_images)
   V("extractText", bare_pdfium_extract_text)
   V("extractTextAsync", bare_pdfium_extract_text_async)
