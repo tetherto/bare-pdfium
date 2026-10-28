@@ -54,8 +54,11 @@ doc.close()
   holds it for the document's life; `openFile` hands PDFium a read callback so it
   pulls pages from disk on demand, which keeps a large PDF from sitting in memory
   twice. The returned handle is identical either way.
-- `pageFlags(page)` — `hasImage` is true when the page has an image covering more
-  than ~5% of it (decoration is ignored); `hasText` is false for a scanned page.
+- `pageFlags(page)` — `hasImage` is true when the page's images cover more than
+  ~5% of it between them, so a figure sliced into tiles counts while a lone
+  decoration does not. An image drawn under 8pt across is a rule or a sliver and
+  does not count, as `imageBounds` and `extractImages` leave it out too.
+  `hasText` is false for a scanned page.
   Both look inside form XObjects, and neither builds the text layer, so checking
   every page of a long document is cheap.
 - `render(page, { scale, clip })` — `scale` maps points to pixels: `1` is 72 DPI, `2`
@@ -63,6 +66,12 @@ doc.close()
   (`{ x, y, width, height }` in points from the bottom-left corner of the page
   as displayed) renders only that region, at the same scale, so a viewer can
   draw a zoomed-in page as tiles instead of one bitmap past the `LIMIT`.
+- `imageBounds(page)` — where each of the page's embedded raster images sits, as
+  `{ x, y, width, height }` in PDF points from the bottom-left corner, including
+  images drawn by form XObjects. Nothing is decoded, so it is cheap enough to
+  find a page's figures before rendering just that part with `clip`, once moved
+  by the page's crop box (see below). Images
+  drawn smaller than 8pt are skipped, as `extractImages` skips them.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
   with their transforms), each RGBA, including images drawn by form XObjects.
   `bounds` is where the image sits on the page, in PDF points from the
@@ -122,6 +131,9 @@ doc.pageLabel(0)
 // => 0, 90, 180 or 270, the clockwise rotation pageSize and render already apply
 doc.pageRotation(0)
 
+// => { x, y, width, height }, the part of the page that is displayed: its crop box
+doc.pageBox(0)
+
 // => [{ x, y, width, height, uri, page }, ...], web links have a uri, internal ones a page
 doc.links(0)
 
@@ -132,9 +144,18 @@ doc.findText(0, 'revenue', { matchCase: false, wholeWord: false })
 doc.textSpans(0)
 ```
 
-All positions are in PDF points from the bottom-left corner of the page, before
-the page's rotation. To place them on a render of a rotated page, turn them by
-`pageRotation(page)`.
+All positions are in PDF points in the page's own space, before its crop box and
+its rotation. A render starts at the corner of the crop box, so subtract
+`pageBox(page)`'s `x` and `y` to place a position on it, then turn it by
+`pageRotation(page)` on a rotated page. For an unrotated page that is also how a
+position becomes a `clip`:
+
+```js
+const box = doc.pageBox(0)
+const [figure] = doc.imageBounds(0)
+doc.render(0, { scale: 2, clip: { ...figure, x: figure.x - box.x, y: figure.y - box.y } })
+```
+
 `findText` gives one rectangle per line a match spans, ready to draw as a
 highlight; its `index` and `length` count characters of the text layer as
 `extractText(page, { hyphens: 'raw' })` returns it. `textSpans` gives the runs

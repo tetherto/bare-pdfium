@@ -190,6 +190,7 @@ test('pageFlags and extractImages look inside form XObjects', (t) => {
     { x: 50, y: 70, width: 200, height: 100 },
     'bounds include the form matrix'
   )
+  t.alike(doc.imageBounds(0), [images[0].bounds], 'imageBounds sees the form image too')
   doc.close()
 })
 

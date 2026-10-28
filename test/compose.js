@@ -183,6 +183,107 @@ test('extractImages returns a drawn image at full size with its place on the pag
   t.alike(image.bounds, { x: 20, y: 30, width: 160, height: 80 })
 })
 
+test('imageBounds finds a drawn image where extractImages does, without decoding it', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 300, height: 300 })
+  doc.draw(0, [{ type: 'image', image: gradientPng(80, 40), x: 20, y: 30, width: 160, height: 80 }])
+  t.alike(doc.imageBounds(0), [{ x: 20, y: 30, width: 160, height: 80 }])
+  t.alike(
+    doc.imageBounds(0),
+    doc.extractImages(0).map((image) => image.bounds)
+  )
+  doc.close()
+})
+
+test('pageFlags counts a figure sliced into tiles as one image', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 400, height: 400 })
+  doc.addPage({ width: 400, height: 400 })
+  // each tile is 4% of the page, under the decoration cutoff on its own
+  const tile = (x, y) => ({
+    type: 'image',
+    image: gradientPng(40, 40),
+    x,
+    y,
+    width: 80,
+    height: 80
+  })
+  doc.draw(0, [tile(100, 100), tile(180, 100), tile(100, 180), tile(180, 180)])
+  doc.draw(1, [tile(100, 100)])
+  t.is(doc.pageFlags(0).hasImage, true, 'four tiles make a figure')
+  t.is(doc.imageBounds(0).length, 4)
+  t.is(doc.pageFlags(1).hasImage, false, 'one small tile stays decoration')
+  t.is(doc.imageBounds(1).length, 1, 'imageBounds still reports it')
+  doc.close()
+})
+
+test('thin images add up to no picture, in pageFlags and imageBounds alike', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 400, height: 400 })
+  // ten strips, each 6pt tall: 11% of the page between them, none a picture on its own
+  const strip = (y) => ({
+    type: 'image',
+    image: gradientPng(60, 2),
+    x: 50,
+    y,
+    width: 300,
+    height: 6
+  })
+  doc.draw(
+    0,
+    Array.from({ length: 10 }, (_, i) => strip(50 + i * 20))
+  )
+  t.is(doc.pageFlags(0).hasImage, false)
+  t.alike(doc.imageBounds(0), [])
+  t.alike(doc.extractImages(0), [])
+  doc.close()
+})
+
+test('imageBounds of a page with no images is empty', (t) => {
+  const doc = pdfium.create()
+  doc.addPage()
+  doc.draw(0, [{ type: 'rect', x: 10, y: 10, width: 100, height: 100 }])
+  t.alike(doc.imageBounds(0), [])
+  doc.close()
+})
+
+test('pageBox moves imageBounds onto the page a clip renders, past an offset crop box', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 400, height: 300 })
+  doc.draw(0, [
+    { type: 'image', image: gradientPng(80, 40), x: 120, y: 30, width: 160, height: 80 }
+  ])
+  const cropped = Buffer.from(
+    Buffer.from(doc.save())
+      .toString('latin1')
+      .replace(/\/Type ?\/Page\b(?!s)/, '/CropBox [100 0 400 300] $&'),
+    'latin1'
+  )
+  doc.close()
+
+  const page = pdfium.open(cropped)
+  const box = page.pageBox(0)
+  const [figure] = page.imageBounds(0)
+  t.alike(box, { x: 100, y: 0, width: 300, height: 300 })
+  t.alike(figure, { x: 120, y: 30, width: 160, height: 80 }, 'positions stay in page space')
+  const clip = { ...figure, x: figure.x - box.x, y: figure.y - box.y }
+  const { data } = page.render(0, { clip })
+  page.close()
+  let paper = 0
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] > 250 && data[i + 1] > 250 && data[i + 2] > 250) paper++
+  }
+  t.is(paper, 0, 'the clip is all image')
+})
+
+test('pageBox of an uncropped page is the whole page', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 300, height: 200 })
+  t.alike(doc.pageBox(0), { x: 0, y: 0, width: 300, height: 200 })
+  t.exception.all(() => doc.pageBox(1), /out of range/)
+  doc.close()
+})
+
 test('draw rejects bad items', (t) => {
   const doc = pdfium.create()
   doc.addPage()
