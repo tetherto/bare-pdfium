@@ -3089,6 +3089,30 @@ bare_pdfium_page_rotation(js_env_t *env, js_callback_info_t *info) {
   return result;
 }
 
+static js_value_t *
+bare_pdfium_page_box(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[2];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 2, argv);
+  if (handle == NULL) return NULL;
+  int32_t page_index;
+  int err = js_get_value_int32(env, argv[1], &page_index);
+  assert(err == 0);
+
+  bare_pdfium__lock();
+  FPDF_PAGE page = FPDF_LoadPage(handle->doc, page_index);
+  FS_RECTF rect;
+  bool found = page && FPDF_GetPageBoundingBox(page, &rect);
+  if (page) FPDF_ClosePage(page);
+  bare_pdfium__unlock();
+  if (!found) {
+    bare_pdfium__throw(env, BARE_PDFIUM_E_PAGE);
+    return NULL;
+  }
+
+  bare_pdfium_box_t box = {rect.left, rect.bottom, rect.right, rect.top};
+  return bare_pdfium__box_value(env, &box);
+}
+
 static const size_t BARE_PDFIUM_MAX_OUTLINE = 65536;
 static const int BARE_PDFIUM_MAX_OUTLINE_DEPTH = 64;
 
@@ -3536,6 +3560,7 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("metadata", bare_pdfium_metadata)
   V("pageLabel", bare_pdfium_page_label)
   V("pageRotation", bare_pdfium_page_rotation)
+  V("pageBox", bare_pdfium_page_box)
   V("outline", bare_pdfium_outline)
   V("links", bare_pdfium_links)
   V("findText", bare_pdfium_find_text)

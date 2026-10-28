@@ -225,6 +225,43 @@ test('imageBounds of a page with no images is empty', (t) => {
   doc.close()
 })
 
+test('pageBox moves imageBounds onto the page a clip renders, past an offset crop box', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 400, height: 300 })
+  doc.draw(0, [
+    { type: 'image', image: gradientPng(80, 40), x: 120, y: 30, width: 160, height: 80 }
+  ])
+  const cropped = Buffer.from(
+    Buffer.from(doc.save())
+      .toString('latin1')
+      .replace(/\/Type ?\/Page\b(?!s)/, '/CropBox [100 0 400 300] $&'),
+    'latin1'
+  )
+  doc.close()
+
+  const page = pdfium.open(cropped)
+  const box = page.pageBox(0)
+  const [figure] = page.imageBounds(0)
+  t.alike(box, { x: 100, y: 0, width: 300, height: 300 })
+  t.alike(figure, { x: 120, y: 30, width: 160, height: 80 }, 'positions stay in page space')
+  const clip = { ...figure, x: figure.x - box.x, y: figure.y - box.y }
+  const { data } = page.render(0, { clip })
+  page.close()
+  let paper = 0
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] > 250 && data[i + 1] > 250 && data[i + 2] > 250) paper++
+  }
+  t.is(paper, 0, 'the clip is all image')
+})
+
+test('pageBox of an uncropped page is the whole page', (t) => {
+  const doc = pdfium.create()
+  doc.addPage({ width: 300, height: 200 })
+  t.alike(doc.pageBox(0), { x: 0, y: 0, width: 300, height: 200 })
+  t.exception.all(() => doc.pageBox(1), /out of range/)
+  doc.close()
+})
+
 test('draw rejects bad items', (t) => {
   const doc = pdfium.create()
   doc.addPage()

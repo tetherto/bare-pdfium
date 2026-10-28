@@ -67,7 +67,8 @@ doc.close()
 - `imageBounds(page)` — where each of the page's embedded raster images sits, as
   `{ x, y, width, height }` in PDF points from the bottom-left corner, including
   images drawn by form XObjects. Nothing is decoded, so it is cheap enough to
-  find a page's figures before rendering just that part with `clip`. Images
+  find a page's figures before rendering just that part with `clip`, once moved
+  by the page's crop box (see below). Images
   drawn smaller than 8pt are skipped, as `extractImages` skips them.
 - `extractImages(page)` — the page's embedded raster images themselves (rendered
   with their transforms), each RGBA, including images drawn by form XObjects.
@@ -128,6 +129,9 @@ doc.pageLabel(0)
 // => 0, 90, 180 or 270, the clockwise rotation pageSize and render already apply
 doc.pageRotation(0)
 
+// => { x, y, width, height }, the part of the page that is displayed: its crop box
+doc.pageBox(0)
+
 // => [{ x, y, width, height, uri, page }, ...], web links have a uri, internal ones a page
 doc.links(0)
 
@@ -138,9 +142,18 @@ doc.findText(0, 'revenue', { matchCase: false, wholeWord: false })
 doc.textSpans(0)
 ```
 
-All positions are in PDF points from the bottom-left corner of the page, before
-the page's rotation. To place them on a render of a rotated page, turn them by
-`pageRotation(page)`.
+All positions are in PDF points in the page's own space, before its crop box and
+its rotation. A render starts at the corner of the crop box, so subtract
+`pageBox(page)`'s `x` and `y` to place a position on it, then turn it by
+`pageRotation(page)` on a rotated page. For an unrotated page that is also how a
+position becomes a `clip`:
+
+```js
+const box = doc.pageBox(0)
+const [figure] = doc.imageBounds(0)
+doc.render(0, { scale: 2, clip: { ...figure, x: figure.x - box.x, y: figure.y - box.y } })
+```
+
 `findText` gives one rectangle per line a match spans, ready to draw as a
 highlight; its `index` and `length` count characters of the text layer as
 `extractText(page, { hyphens: 'raw' })` returns it. `textSpans` gives the runs

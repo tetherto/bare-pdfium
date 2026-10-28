@@ -282,6 +282,8 @@ export class Doc {
   pageLabel(page: number): string | null
   /** the page's clockwise rotation in degrees: 0, 90, 180 or 270 */
   pageRotation(page: number): 0 | 90 | 180 | 270
+  /** the part of the page that is displayed (its crop box), in the points every position uses */
+  pageBox(page: number): Bounds
   links(page: number): Link[]
   findText(page: number, query: string, opts?: FindOptions): TextMatch[]
   /** each run of text PDFium lays out on the page, with its rectangle */
