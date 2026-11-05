@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <bare.h>
+#include <bare/module.h>
 #include <fpdf_annot.h>
 #include <fpdf_doc.h>
 #include <fpdf_edit.h>
@@ -18,7 +18,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <utf.h>
+
+#if defined(__wasm__)
+// A WebAssembly addon has neither an event loop nor threads, so the work that
+// goes to the libuv thread pool elsewhere runs on the calling thread instead.
+typedef struct uv_work_s uv_work_t;
+
+typedef void (*uv_work_cb)(uv_work_t *req);
+typedef void (*uv_after_work_cb)(uv_work_t *req, int status);
+
+struct uv_work_s {
+  void *data;
+};
+#else
 #include <uv.h>
+#endif
 
 // PDFium is not thread-safe and wants a single process-lifetime init; there is
 // no matching destroy — the library lives for the life of the process.
@@ -28,8 +42,10 @@ static size_t bare_pdfium_envs = 0;
 
 static size_t bare_pdfium_documents = 0;
 
+#if !defined(__wasm__)
 static uv_once_t bare_pdfium_lock_once = UV_ONCE_INIT;
 static uv_mutex_t bare_pdfium_lock_mutex;
+#endif
 
 // Rendering a page at an absurd scale would allocate gigabytes; cap each side.
 static const int BARE_PDFIUM_MAX_DIM = 20000;
@@ -178,22 +194,28 @@ typedef struct {
   bare_pdfium_raster_t raster;
 } bare_pdfium_job_t;
 
+#if !defined(__wasm__)
 static void
 bare_pdfium__init_lock(void) {
   int err = uv_mutex_init(&bare_pdfium_lock_mutex);
   assert(err == 0);
 }
+#endif
 
 // Never call into JS while holding the lock: any allocation can run a GC whose finalizers take it.
 static void
 bare_pdfium__lock(void) {
+#if !defined(__wasm__)
   uv_once(&bare_pdfium_lock_once, bare_pdfium__init_lock);
   uv_mutex_lock(&bare_pdfium_lock_mutex);
+#endif
 }
 
 static void
 bare_pdfium__unlock(void) {
+#if !defined(__wasm__)
   uv_mutex_unlock(&bare_pdfium_lock_mutex);
+#endif
 }
 
 static void
@@ -212,8 +234,27 @@ bare_pdfium__maybe_destroy(void) {
 
 static bool
 bare_pdfium__trylock(void) {
+#if defined(__wasm__)
+  return true;
+#else
   uv_once(&bare_pdfium_lock_once, bare_pdfium__init_lock);
   return uv_mutex_trylock(&bare_pdfium_lock_mutex) == 0;
+#endif
+}
+
+static int
+bare_pdfium__queue_work(js_env_t *env, uv_work_t *req, uv_work_cb work, uv_after_work_cb done) {
+#if defined(__wasm__)
+  work(req);
+  done(req, 0);
+  return 0;
+#else
+  uv_loop_t *loop;
+  int err = js_get_env_loop(env, &loop);
+  if (err < 0) return err;
+
+  return uv_queue_work(loop, req, work, done);
+#endif
 }
 
 static void
@@ -250,18 +291,22 @@ bare_pdfium__settle_teardown(bare_pdfium_doc_t *handle) {
     bare_pdfium__release_files(handle);
   }
 
+#if !defined(__wasm__)
   js_deferred_teardown_t *teardown = handle->teardown;
   handle->teardown = NULL;
   int err = js_finish_deferred_teardown_callback(teardown);
   assert(err == 0);
+#endif
 }
 
+#if !defined(__wasm__)
 static void
 bare_pdfium__on_teardown(js_deferred_teardown_t *teardown, void *data) {
   bare_pdfium_doc_t *handle = (bare_pdfium_doc_t *) data;
   handle->exiting = true;
   bare_pdfium__settle_teardown(handle);
 }
+#endif
 
 typedef struct {
   uv_work_t req;
@@ -289,11 +334,13 @@ bare_pdfium__on_doc_finalize(js_env_t *env, void *data, void *finalize_hint) {
   int err;
   bare_pdfium_doc_t *handle = (bare_pdfium_doc_t *) data;
 
+#if !defined(__wasm__)
   if (handle->teardown) {
     err = js_finish_deferred_teardown_callback(handle->teardown);
     assert(err == 0);
     handle->teardown = NULL;
   }
+#endif
 
   if (handle->doc == NULL && handle->font_count == 0 && handle->image_count == 0) {
     bare_pdfium__release_files(handle);
@@ -309,14 +356,10 @@ bare_pdfium__on_doc_finalize(js_env_t *env, void *data, void *finalize_hint) {
     return;
   }
 
-  uv_loop_t *loop;
-  err = js_get_env_loop(env, &loop);
-  assert(err == 0);
-
   bare_pdfium_release_t *release = malloc(sizeof(bare_pdfium_release_t));
   release->req.data = release;
   release->handle = handle;
-  err = uv_queue_work(loop, &release->req, bare_pdfium__release_work, bare_pdfium__release_done);
+  err = bare_pdfium__queue_work(env, &release->req, bare_pdfium__release_work, bare_pdfium__release_done);
   assert(err == 0);
 }
 
@@ -324,8 +367,10 @@ static js_value_t *
 bare_pdfium__wrap_doc(js_env_t *env, bare_pdfium_doc_t *handle) {
   int err;
   handle->env = env;
+#if !defined(__wasm__)
   err = js_add_deferred_teardown_callback(env, bare_pdfium__on_teardown, handle, &handle->teardown);
   assert(err == 0);
+#endif
   js_value_t *external;
   err = js_create_external(env, handle, bare_pdfium__on_doc_finalize, NULL, &external);
   assert(err == 0);
@@ -1370,11 +1415,7 @@ bare_pdfium_extract_text_async(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_bool(env, argv[2], &job->clip);
   assert(err == 0);
 
-  uv_loop_t *loop;
-  err = js_get_env_loop(env, &loop);
-  assert(err == 0);
-
-  err = uv_queue_work(loop, &job->req, bare_pdfium__text_work, bare_pdfium__text_done);
+  err = bare_pdfium__queue_work(env, &job->req, bare_pdfium__text_work, bare_pdfium__text_done);
   assert(err == 0);
 
   return promise;
@@ -1446,11 +1487,7 @@ bare_pdfium_render_async(js_env_t *env, js_callback_info_t *info) {
     assert(err == 0);
   }
 
-  uv_loop_t *loop;
-  err = js_get_env_loop(env, &loop);
-  assert(err == 0);
-
-  err = uv_queue_work(loop, &job->req, bare_pdfium__render_work, bare_pdfium__render_done);
+  err = bare_pdfium__queue_work(env, &job->req, bare_pdfium__render_work, bare_pdfium__render_done);
   assert(err == 0);
 
   return promise;
@@ -2436,11 +2473,7 @@ bare_pdfium__edit(js_env_t *env, js_callback_info_t *info, bare_pdfium_edit_setu
   err = js_create_promise(env, &job->deferred, &promise);
   assert(err == 0);
 
-  uv_loop_t *loop;
-  err = js_get_env_loop(env, &loop);
-  assert(err == 0);
-
-  err = uv_queue_work(loop, &job->req, bare_pdfium__edit_work, bare_pdfium__edit_done);
+  err = bare_pdfium__queue_work(env, &job->req, bare_pdfium__edit_work, bare_pdfium__edit_done);
   assert(err == 0);
 
   return promise;
@@ -2969,6 +3002,7 @@ bare_pdfium_font_metrics(js_env_t *env, js_callback_info_t *info) {
   return result;
 }
 
+#if !defined(__wasm__)
 static void
 bare_pdfium__on_env_teardown(void *data) {
   bare_pdfium__lock();
@@ -2976,6 +3010,7 @@ bare_pdfium__on_env_teardown(void *data) {
   bare_pdfium__maybe_destroy();
   bare_pdfium__unlock();
 }
+#endif
 
 typedef struct {
   unsigned short *text;
@@ -3511,8 +3546,10 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   bare_pdfium_envs++;
   bare_pdfium__unlock();
 
+#if !defined(__wasm__)
   err = js_add_teardown_callback(env, bare_pdfium__on_env_teardown, NULL);
   assert(err == 0);
+#endif
 
 #define V(name, fn) \
   { \

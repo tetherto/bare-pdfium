@@ -1,0 +1,9 @@
+# GN has no WASI toolchain, so this only describes the build for gn/to-cmake.js:
+# as Linux on a CPU none of PDFium's dependencies have SIMD code for, with the
+# C++ library of the WASI sysroot rather than Chromium's.
+target_os = "linux"
+target_cpu = "riscv64"
+
+use_glib = false
+use_sysroot = false
+use_custom_libcxx = false

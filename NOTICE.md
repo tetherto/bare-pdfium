@@ -33,6 +33,7 @@ accompany any redistribution of the compiled library.
 | fast_float    | The fast_float authors                | Apache-2.0, MIT or BSL-1.0                                                           |
 | Dragonbox     | Junekey Jeon                          | Apache-2.0 with LLVM exceptions or BSL-1.0                                           |
 | LLVM          | The LLVM Project                      | Apache-2.0 with LLVM exceptions (libc++, libc++abi, libunwind, compiler-rt builtins) |
+| wasi-libc     | The wasi-libc contributors            | Apache-2.0 with LLVM exceptions, Apache-2.0 or MIT; parts MIT, BSD-2-Clause, CC0     |
 
 Portions of this software are copyright © 2026 The FreeType Project
 (www.freetype.org). All rights reserved.

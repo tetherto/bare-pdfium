@@ -33,6 +33,7 @@ runs:
 
         case "$PLATFORM" in
           darwin) os=mac ;;
+          wasi) os=linux ;;
           *) os=$PLATFORM ;;
         esac
 
@@ -69,7 +70,7 @@ runs:
 
         # Build the addon against the same Debian sysroot as PDFium, which also
         # lets linux-arm64 cross-compile from the x64 host Chromium's clang needs.
-        if [ "$os" = linux ]; then
+        if [ "$PLATFORM" = linux ]; then
           python3 build/linux/sysroot_scripts/install-sysroot.py --arch="$ARCH"
           case "$ARCH" in
             x64) sysroot=amd64 ;;
@@ -90,8 +91,14 @@ runs:
           linux|android) targets="$targets buildtools/third_party/libc++abi:libc++abi" ;;
         esac
 
-        gn gen "out/$TARGET"
-        autoninja -C "out/$TARGET" $targets
+        # GN has no WASI toolchain, so for WASI it only describes the build,
+        # which the addon's CMakeLists.txt compiles from that description.
+        if [ "$PLATFORM" = wasi ]; then
+          gn gen --ide=json --root-pattern=//:pdfium "out/$TARGET"
+        else
+          gn gen "out/$TARGET"
+          autoninja -C "out/$TARGET" $targets
+        fi
 
         echo "flags=$flags" >> "$GITHUB_OUTPUT"
 

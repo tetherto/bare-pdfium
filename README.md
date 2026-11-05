@@ -260,6 +260,29 @@ another call, the release runs on a worker thread instead. When the process
 exits, documents still open are closed after any async calls on them finish;
 those calls neither resolve nor reject, as nothing is left to observe them.
 
+### WebAssembly
+
+On Bare 1.36 or later, the addon can be loaded as WebAssembly instead, from its
+`wasi-wasm32` prebuild. PDFium then runs in the linear memory of its own
+instance, so a memory bug a document finds in it stays there:
+
+```js
+const pdfium = require('bare-pdfium', { with: { host: 'wasi-wasm32' } })
+```
+
+The API is the same, except that:
+
+- PDFium works on the calling thread, as a WebAssembly addon has no thread
+  pool: the async variants still return promises, but block while they run, and
+  a `signal` stops only renders that have not started yet.
+- `openFile` reads only from the directories a WASI provider preopens, given as
+  the `wasi` import attribute.
+- Encrypting (`encrypt`, and the `encrypt` option of `save` and `compose`)
+  throws `ENCRYPT`, as `bare-crypto` has no `wasi-wasm32` build.
+- Linear memory stops at 1 GiB.
+
+`bare-png`, which `compose` uses, is loaded as WebAssembly along with it.
+
 ### One-shot helpers
 
 These open and close a document for you:
@@ -533,7 +556,7 @@ consumers do not need `@types/node`.
 PDFium is built by its own GN build and linked into the addon through
 [`cmake-gn`](https://github.com/holepunchto/cmake-gn), the way
 [`libjs`](https://github.com/holepunchto/libjs) links V8. Every prebuild is a
-single `.bare`. Building needs
+single `.bare`, or `.wasm` for WASI. Building needs
 [`depot_tools`](https://commondatastorage.googleapis.com/chrome-infra-docs/flat/depot_tools/docs/html/depot_tools_tutorial.html#_setting_up)
 and the Bare toolchain (`npm i -g bare-make`).
 
@@ -593,6 +616,19 @@ bare-make install    # writes prebuilds/<target>/
 npm test
 ```
 
+GN has no WASI toolchain, so for `wasi-wasm32` it only describes the build, and
+CMake compiles PDFium from that description with the WASI toolchain, which needs
+Node.js and the WASI sysroot (`npm i -g wasi-sysroot`). Nothing is built with
+`autoninja`:
+
+```sh
+gn gen out/wasi-wasm32 --ide=json --root-pattern=//:pdfium --args='import("//bare-pdfium/gn/pdfium.gni") import("//bare-pdfium/gn/mode/release.gni") import("//bare-pdfium/gn/target/wasi-wasm32.gni")'
+cd <path to bare-pdfium>
+bare-make generate --platform wasi --arch wasm32 -D GN_DIR=<root>/pdfium -D GN_OUT_DIR=<root>/pdfium/out/wasi-wasm32
+bare-make build
+bare-make install    # writes prebuilds/wasi-wasm32/
+```
+
 `npm test` reports coverage, and `npm run lint` runs Prettier and
 [`lunte`](https://github.com/holepunchto/lunte); format C with the repository's
 `.clang-format`. CI also builds a debug Linux addon and Bare with AddressSanitizer
@@ -627,7 +663,7 @@ against the expected PNGs from PDFium's own pixel tests, byte for byte.
 
 `.github/workflows/prebuild.yml` builds prebuilds for every target
 (linux x64/arm64, android arm64/arm/x64/ia32, darwin x64/arm64, ios arm64 +
-simulators, win32 x64/arm64) via the holepunch `compile-prebuilds` actions, then
+simulators, win32 x64/arm64, wasi wasm32) via the holepunch `compile-prebuilds` actions, then
 merges them. Run it from the Actions tab (`workflow_dispatch`).
 `.github/workflows/publish.yml` runs when a `v*` tag is pushed: it builds the same
 set and publishes it to npm through trusted publishing (no npm token), then
@@ -640,7 +676,7 @@ publishes as `release-<major>.<minor>`.
 This wrapper is Apache-2.0. The bundled PDFium (shipped in `prebuilds/`) is
 BSD-3-Clause and Apache-2.0 (© The PDFium Authors) and statically links further
 permissive components, along with LLVM's libc++ outside Windows and its libc++abi and libunwind on
-Linux and Android. See `NOTICE.md`
+Linux, Android and WASI, where it also links wasi-libc. See `NOTICE.md`
 — a shipping application must carry these attributions.
 
 ## Why not pdf.js?
