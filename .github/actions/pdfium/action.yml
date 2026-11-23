@@ -38,7 +38,8 @@ runs:
 
         root="$RUNNER_TEMP/pdfium"
         mkdir -p "$root/pdfium"
-        ln -s "$GITHUB_WORKSPACE" "$root/pdfium/bare-pdfium"
+        # gclient refuses a solution reached through a symlink, so the checkout is copied in.
+        cp -R "$GITHUB_WORKSPACE" "$root/pdfium/bare-pdfium"
 
         cat > "$root/.gclient" <<EOF
         solutions = [
@@ -122,7 +123,8 @@ runs:
 
         $root = Join-Path $env:RUNNER_TEMP pdfium
         New-Item -ItemType Directory -Force (Join-Path $root pdfium) | Out-Null
-        New-Item -ItemType Junction -Path (Join-Path $root pdfium/bare-pdfium) -Target $env:GITHUB_WORKSPACE | Out-Null
+        # gclient refuses a solution reached through a junction, so the checkout is copied in.
+        Copy-Item -Recurse $env:GITHUB_WORKSPACE (Join-Path $root pdfium/bare-pdfium)
 
         Set-Content (Join-Path $root .gclient) @"
         solutions = [
