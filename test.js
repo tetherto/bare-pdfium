@@ -863,6 +863,180 @@ test('textSpans gives each run of text and where it is', (t) => {
   doc.close()
 })
 
+function linesPdf() {
+  const content = 'BT /F1 12 Tf 20 150 Td (first line) Tj 0 -14 Td (second line) Tj ET'
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
+// Char code 0 has no Unicode in Helvetica, so PDFium keeps the glyph as a character
+// but leaves it out of the text.
+function unprintedGlyphPdf() {
+  const content = 'BT /F1 24 Tf 40 100 Td (ab\\000cd pdf) Tj ET'
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ])
+}
+
+// Code 1 maps to U+1F600 through ToUnicode. Where wchar_t is 32 bits the text leaves it out;
+// on Windows it is two surrogates. Either way the boxes must follow the text.
+function nonBmpPdf() {
+  const content = 'BT /F1 24 Tf 40 100 Td (ab\\001 pdf) Tj ET'
+  const cmap = [
+    '/CIDInit /ProcSet findresource begin',
+    '12 dict begin',
+    'begincmap',
+    '/CMapName /NonBmp def',
+    '/CMapType 2 def',
+    '1 begincodespacerange',
+    '<00> <FF>',
+    'endcodespacerange',
+    '1 beginbfchar',
+    '<01> <D83DDE00>',
+    'endbfchar',
+    '2 beginbfrange',
+    '<20> <20> <0020>',
+    '<61> <7A> <0061>',
+    'endbfrange',
+    'endcmap',
+    'CMapName currentdict /CMap defineresource pop',
+    'end',
+    'end'
+  ].join('\n')
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>',
+    `<< /Length ${cmap.length} >>\nstream\n${cmap}\nendstream`
+  ])
+}
+
+function boxAt(boxes, i) {
+  return [...boxes.subarray(4 * i, 4 * i + 4)]
+}
+
+function boxesOver(boxes, start, length) {
+  let left = Infinity
+  let bottom = Infinity
+  let right = -Infinity
+  let top = -Infinity
+  for (let i = start; i < start + length; i++) {
+    const [x, y, width, height] = boxAt(boxes, i)
+    left = Math.min(left, x)
+    bottom = Math.min(bottom, y)
+    right = Math.max(right, x + width)
+    top = Math.max(top, y + height)
+  }
+  return { x: left, y: bottom, width: right - left, height: top - bottom }
+}
+
+function sameBox(t, actual, expected, message) {
+  const close = ['x', 'y', 'width', 'height'].every((k) => Math.abs(actual[k] - expected[k]) < 0.01)
+  t.ok(close, `${message}: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`)
+}
+
+test('charBoxes has a box for each unit of the raw text', (t) => {
+  for (const pdf of [textPdf(), hyphenPdf(), linesPdf(), unprintedGlyphPdf(), nonBmpPdf()]) {
+    const doc = addon.open(pdf)
+    const boxes = doc.charBoxes(0)
+    t.ok(boxes instanceof Float32Array)
+    t.is(boxes.length, 4 * doc.extractText(0, { hyphens: 'raw' }).length)
+    doc.close()
+  }
+})
+
+test('charBoxes puts a word where findText finds it', (t) => {
+  const doc = addon.open(textPdf())
+  const text = doc.extractText(0, { hyphens: 'raw' })
+  const boxes = doc.charBoxes(0)
+  const [match] = doc.findText(0, 'PDF', { matchCase: true })
+  sameBox(t, boxesOver(boxes, text.indexOf('PDF'), 3), match.rects[0], 'PDF')
+  const [x, y, width, height] = boxAt(boxes, text.indexOf('H'))
+  t.ok(x >= 40 && x < 45 && width > 0, 'H starts where the text starts')
+  t.ok(y < 100 + 24 && y + height > 100, 'H sits on the baseline')
+  doc.close()
+})
+
+test('charBoxes gives a line break zeros and a line-end hyphen its glyph', (t) => {
+  const lines = addon.open(linesPdf())
+  const text = lines.extractText(0, { hyphens: 'raw' })
+  const boxes = lines.charBoxes(0)
+  const brk = text.indexOf('\r\n')
+  t.ok(brk > 0, 'the lines are separated')
+  t.alike(boxAt(boxes, brk), [0, 0, 0, 0], '\\r has no box')
+  t.alike(boxAt(boxes, brk + 1), [0, 0, 0, 0], '\\n has no box')
+  const [second] = lines.findText(0, 'second')
+  sameBox(t, boxesOver(boxes, text.indexOf('second'), 6), second.rects[0], 'second')
+  lines.close()
+
+  const hyphen = addon.open(hyphenPdf())
+  const raw = hyphen.extractText(0, { hyphens: 'raw' })
+  const marks = hyphen.charBoxes(0)
+  const [x, , width, height] = boxAt(marks, raw.indexOf('￾'))
+  t.ok(width > 0 && height > 0, 'the hyphen keeps its box')
+  t.ok(x > boxAt(marks, raw.indexOf('infer') + 4)[0], 'after the r of infer')
+  const [book] = hyphen.findText(0, 'book')
+  sameBox(t, boxesOver(marks, raw.indexOf('book'), 4), book.rects[0], 'book')
+  hyphen.close()
+})
+
+test('charBoxes stays aligned with the text past a glyph PDFium cannot print', (t) => {
+  const doc = addon.open(unprintedGlyphPdf())
+  const text = doc.extractText(0, { hyphens: 'raw' })
+  const boxes = doc.charBoxes(0)
+  const at = text.indexOf('pdf')
+  const [match] = doc.findText(0, 'pdf')
+  t.ok(match.index > at, 'findText counts the unprinted glyph, the text does not')
+  sameBox(t, boxesOver(boxes, at, 3), match.rects[0], 'pdf')
+  doc.close()
+})
+
+test('charBoxes stays aligned with the text past a character outside the BMP', (t) => {
+  const doc = addon.open(nonBmpPdf())
+  const text = doc.extractText(0, { hyphens: 'raw' })
+  const boxes = doc.charBoxes(0)
+  t.is(boxes.length, 4 * text.length)
+  const [match] = doc.findText(0, 'pdf')
+  sameBox(t, boxesOver(boxes, text.indexOf('pdf'), 3), match.rects[0], 'pdf')
+  doc.close()
+})
+
+test('charBoxes is empty for a page with no text layer', (t) => {
+  const doc = addon.open(imagePdf())
+  const boxes = doc.charBoxes(0)
+  t.ok(boxes instanceof Float32Array)
+  t.is(boxes.length, 0)
+  doc.close()
+})
+
+test('charBoxes is in the page space, before its rotation', (t) => {
+  const doc = addon.open(textPdf())
+  const before = [...doc.charBoxes(0)]
+  doc.rotate(90)
+  t.alike([...doc.charBoxes(0)], before)
+  doc.close()
+})
+
+test('charBoxesAsync matches charBoxes', async (t) => {
+  const doc = addon.open(hyphenPdf())
+  t.alike([...(await doc.charBoxesAsync(0))], [...doc.charBoxes(0)])
+  const pending = doc.charBoxesAsync(0)
+  doc.close()
+  await t.exception(pending, /document is closed/)
+  await t.exception(doc.charBoxesAsync(0), /document is closed/)
+})
+
 test('deletePages and movePages change the page order', async (t) => {
   const pages = (doc) => [...doc.textPages()].map(({ text }) => text)
   const doc = addon.open(twoPageTextPdf())
@@ -1264,6 +1438,10 @@ test('native errors carry a code', (t) => {
     'PAGE_RANGE'
   )
   t.is(
+    codeOf(() => doc.charBoxes(9)),
+    'PAGE_RANGE'
+  )
+  t.is(
     codeOf(() => doc.render(0, { scale: 100 })),
     'LIMIT'
   )
@@ -1281,6 +1459,7 @@ test('native errors carry a code', (t) => {
 test('async errors carry a code', async (t) => {
   const doc = addon.open(textPdf())
   t.is(await asyncCodeOf(doc.renderAsync(9)), 'PAGE_RANGE')
+  t.is(await asyncCodeOf(doc.charBoxesAsync(9)), 'PAGE_RANGE')
   t.is(await asyncCodeOf(doc.rotateAsync(90, { pages: [9] })), 'PAGE_RANGE')
   const pending = doc.extractTextAsync(0)
   doc.close()
