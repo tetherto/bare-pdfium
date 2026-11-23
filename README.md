@@ -142,6 +142,9 @@ doc.findText(0, 'revenue', { matchCase: false, wholeWord: false })
 
 // => [{ text, x, y, width, height }, ...], each run of text and where it is
 doc.textSpans(0)
+
+// => Float32Array [x, y, width, height, ...], the box of each character of the text
+doc.charBoxes(0)
 ```
 
 All positions are in PDF points in the page's own space, before its crop box and
@@ -161,6 +164,18 @@ highlight; its `index` and `length` count characters of the text layer as
 `extractText(page, { hyphens: 'raw' })` returns it. `textSpans` gives the runs
 PDFium lays out, which is what a viewer needs to let people select text.
 
+`charBoxes` gives every character's box in one pass over the page, where
+`findText` builds the page's text layer again on every call. It holds four
+numbers, `x, y, width, height`, for each UTF-16 unit of
+`extractText(page, { hyphens: 'raw' })`, so the unit at index `i` of that string
+has its box at `4 * i`, and a word found at `i` with `indexOf` spans the boxes of
+`i` to `i + word.length - 1`. The box is the glyph's own bounds
+(`FPDFText_GetCharBox`), not the line's height, so it is tight enough to test
+for a strike-through. A space or line break PDFium inserted between runs has
+no glyph and gets zeros; the U+FFFE that marks a line-end hyphen gets the
+hyphen's box. `hyphens: 'keep'` keeps every index too; `'join'` and `clip: true`
+drop characters, so look boxes up by the raw text.
+
 ### Async
 
 Every call above is synchronous and blocks the event loop while PDFium works. For
@@ -175,9 +190,9 @@ for await (const { page, text } of doc.textPagesAsync()) {
 }
 ```
 
-- `renderAsync(page, opts)`, `extractTextAsync(page, opts)` and
-  `textPagesAsync(opts)` return the same results as `render`, `extractText` and
-  `textPages`.
+- `renderAsync(page, opts)`, `extractTextAsync(page, opts)`,
+  `textPagesAsync(opts)` and `charBoxesAsync(page)` return the same results as
+  `render`, `extractText`, `textPages` and `charBoxes`.
 - `renderAsync` takes a `signal` from an `AbortController` (for example
   [`bare-abort-controller`](https://github.com/holepunchto/bare-abort-controller)).
   Aborting rejects with `ABORTED`, the signal's `reason` as its `cause`: a render

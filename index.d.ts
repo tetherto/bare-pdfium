@@ -288,6 +288,12 @@ export class Doc {
   findText(page: number, query: string, opts?: FindOptions): TextMatch[]
   /** each run of text PDFium lays out on the page, with its rectangle */
   textSpans(page: number): TextSpan[]
+  /**
+   * x, y, width and height, in that order, of each UTF-16 unit of
+   * extractText(page, { hyphens: 'raw' }); zeros for a space or line break PDFium generated
+   */
+  charBoxes(page: number): Float32Array
+  charBoxesAsync(page: number): Promise<Float32Array>
   addPage(opts?: AddPageOptions): number
   loadFont(font: string | Uint8Array): number
   measureText(text: string, font: number, size: number): number

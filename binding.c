@@ -8,6 +8,7 @@
 #include <fpdf_ppo.h>
 #include <fpdf_progressive.h>
 #include <fpdf_save.h>
+#include <fpdf_searchex.h>
 #include <fpdf_text.h>
 #include <fpdfview.h>
 #include <js.h>
@@ -174,6 +175,7 @@ typedef struct {
   js_ref_t *abort_ref;
   const char *error;
   unsigned short *text;
+  float *boxes;
   size_t units;
   bare_pdfium_raster_t raster;
 } bare_pdfium_job_t;
@@ -1314,6 +1316,7 @@ bare_pdfium__settle_job(bare_pdfium_job_t *job, js_value_t *resolution) {
   bare_pdfium__settle_teardown(handle);
 
   free(job->text);
+  free(job->boxes);
   free(job->raster.rgba);
   free(job);
 }
@@ -3459,6 +3462,146 @@ bare_pdfium_text_spans(js_env_t *env, js_callback_info_t *info) {
   return bare_pdfium__hits_value(env, &hits, true);
 }
 
+// One box per UTF-16 unit of FPDFText_GetText's output, which leaves out the characters
+// PDFium does not print and, where wchar_t is 32 bits, the supplementary ones.
+static const char *
+bare_pdfium__char_boxes(FPDF_DOCUMENT doc, int page_index, float **boxes, size_t *units) {
+  *boxes = NULL;
+  *units = 0;
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (page == NULL) return BARE_PDFIUM_E_PAGE;
+
+  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+  if (text_page == NULL) {
+    FPDF_ClosePage(page);
+    return BARE_PDFIUM_E_TEXT_PAGE;
+  }
+
+  const char *error = NULL;
+  int count = FPDFText_CountChars(text_page);
+  if (count > 0) {
+    *boxes = calloc((size_t) count * 4, sizeof(float));
+    if (*boxes == NULL) error = BARE_PDFIUM_E_MEMORY;
+  }
+
+  for (int i = 0; i < count && error == NULL; i++) {
+    unsigned int unicode = FPDFText_GetUnicode(text_page, i);
+    if (FPDFText_GetTextIndexFromCharIndex(text_page, i) < 0 || (unicode > 0xffff && unicode <= 0x10ffff)) continue;
+    float *box = *boxes + 4 * (*units)++;
+    double left, right, bottom, top;
+    if (FPDFText_IsGenerated(text_page, i) == 1 || !FPDFText_GetCharBox(text_page, i, &left, &right, &bottom, &top)) continue;
+    box[0] = (float) fmin(left, right);
+    box[1] = (float) fmin(bottom, top);
+    box[2] = (float) fabs(right - left);
+    box[3] = (float) fabs(top - bottom);
+  }
+
+  FPDFText_ClosePage(text_page);
+  FPDF_ClosePage(page);
+
+  return error;
+}
+
+static js_value_t *
+bare_pdfium__boxes_result(js_env_t *env, const float *boxes, size_t units) {
+  int err;
+  void *data;
+  js_value_t *buffer, *result;
+  err = js_create_arraybuffer(env, units * 4 * sizeof(float), &data, &buffer);
+  assert(err == 0);
+  if (units) memcpy(data, boxes, units * 4 * sizeof(float));
+  err = js_create_typedarray(env, js_float32array, units * 4, buffer, 0, &result);
+  assert(err == 0);
+  return result;
+}
+
+static js_value_t *
+bare_pdfium_char_boxes(js_env_t *env, js_callback_info_t *info) {
+  js_value_t *argv[2];
+  bare_pdfium_doc_t *handle = bare_pdfium__read_args(env, info, 2, argv);
+  if (handle == NULL) return NULL;
+  int32_t page_index;
+  int err = js_get_value_int32(env, argv[1], &page_index);
+  assert(err == 0);
+
+  float *boxes;
+  size_t units;
+  bare_pdfium__lock();
+  const char *error = bare_pdfium__char_boxes(handle->doc, page_index, &boxes, &units);
+  bare_pdfium__unlock();
+
+  if (error) {
+    free(boxes);
+    bare_pdfium__throw(env, error);
+    return NULL;
+  }
+
+  js_value_t *result = bare_pdfium__boxes_result(env, boxes, units);
+  free(boxes);
+
+  return result;
+}
+
+static void
+bare_pdfium__boxes_work(uv_work_t *req) {
+  bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
+  bare_pdfium__lock();
+  job->error = job->handle->doc
+                 ? bare_pdfium__char_boxes(job->handle->doc, job->page_index, &job->boxes, &job->units)
+                 : BARE_PDFIUM_E_CLOSED;
+  bare_pdfium__unlock();
+}
+
+static void
+bare_pdfium__boxes_done(uv_work_t *req, int status) {
+  int err;
+  bare_pdfium_job_t *job = (bare_pdfium_job_t *) req->data;
+  js_env_t *env = job->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  js_value_t *result = job->error || job->handle->exiting ? NULL : bare_pdfium__boxes_result(env, job->boxes, job->units);
+  bare_pdfium__settle_job(job, result);
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+}
+
+static js_value_t *
+bare_pdfium_char_boxes_async(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  int64_t page_index;
+  err = js_get_value_int64(env, argv[1], &page_index);
+  assert(err == 0);
+
+  if (bare_pdfium__handle(env, argv[0]) == NULL) {
+    bare_pdfium__throw(env, BARE_PDFIUM_E_CLOSED);
+    return NULL;
+  }
+
+  bare_pdfium_job_t *job;
+  js_value_t *promise = bare_pdfium__queue_job(env, argv[0], page_index, &job);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &job->req, bare_pdfium__boxes_work, bare_pdfium__boxes_done);
+  assert(err == 0);
+
+  return promise;
+}
+
 static js_value_t *
 bare_pdfium_load_image(js_env_t *env, js_callback_info_t *info) {
   int err;
@@ -3569,6 +3712,8 @@ bare_pdfium_exports(js_env_t *env, js_value_t *exports) {
   V("links", bare_pdfium_links)
   V("findText", bare_pdfium_find_text)
   V("textSpans", bare_pdfium_text_spans)
+  V("charBoxes", bare_pdfium_char_boxes)
+  V("charBoxesAsync", bare_pdfium_char_boxes_async)
 #undef V
 
 #define V(name, n) \
