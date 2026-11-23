@@ -887,6 +887,41 @@ function unprintedGlyphPdf() {
   ])
 }
 
+// Code 1 maps to U+1F600 through ToUnicode. Where wchar_t is 32 bits the text leaves it out;
+// on Windows it is two surrogates. Either way the boxes must follow the text.
+function nonBmpPdf() {
+  const content = 'BT /F1 24 Tf 40 100 Td (ab\\001 pdf) Tj ET'
+  const cmap = [
+    '/CIDInit /ProcSet findresource begin',
+    '12 dict begin',
+    'begincmap',
+    '/CMapName /NonBmp def',
+    '/CMapType 2 def',
+    '1 begincodespacerange',
+    '<00> <FF>',
+    'endcodespacerange',
+    '1 beginbfchar',
+    '<01> <D83DDE00>',
+    'endbfchar',
+    '2 beginbfrange',
+    '<20> <20> <0020>',
+    '<61> <7A> <0061>',
+    'endbfrange',
+    'endcmap',
+    'CMapName currentdict /CMap defineresource pop',
+    'end',
+    'end'
+  ].join('\n')
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>',
+    `<< /Length ${cmap.length} >>\nstream\n${cmap}\nendstream`
+  ])
+}
+
 function boxAt(boxes, i) {
   return [...boxes.subarray(4 * i, 4 * i + 4)]
 }
@@ -912,7 +947,7 @@ function sameBox(t, actual, expected, message) {
 }
 
 test('charBoxes has a box for each unit of the raw text', (t) => {
-  for (const pdf of [textPdf(), hyphenPdf(), linesPdf(), unprintedGlyphPdf()]) {
+  for (const pdf of [textPdf(), hyphenPdf(), linesPdf(), unprintedGlyphPdf(), nonBmpPdf()]) {
     const doc = addon.open(pdf)
     const boxes = doc.charBoxes(0)
     t.ok(boxes instanceof Float32Array)
@@ -964,6 +999,16 @@ test('charBoxes stays aligned with the text past a glyph PDFium cannot print', (
   const [match] = doc.findText(0, 'pdf')
   t.ok(match.index > at, 'findText counts the unprinted glyph, the text does not')
   sameBox(t, boxesOver(boxes, at, 3), match.rects[0], 'pdf')
+  doc.close()
+})
+
+test('charBoxes stays aligned with the text past a character outside the BMP', (t) => {
+  const doc = addon.open(nonBmpPdf())
+  const text = doc.extractText(0, { hyphens: 'raw' })
+  const boxes = doc.charBoxes(0)
+  t.is(boxes.length, 4 * text.length)
+  const [match] = doc.findText(0, 'pdf')
+  sameBox(t, boxesOver(boxes, text.indexOf('pdf'), 3), match.rects[0], 'pdf')
   doc.close()
 })
 
