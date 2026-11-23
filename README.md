@@ -539,11 +539,12 @@ and the Bare toolchain (`npm i -g bare-make`).
 
 `DEPS` pins PDFium, which pins everything it builds with. Fetch it with gclient
 into a directory of its own, with this repository checked out as
-`pdfium/bare-pdfium` inside it:
+`pdfium/bare-pdfium` inside it. gclient refuses a symlink there, so clone or
+copy it in:
 
 ```sh
 mkdir -p pdfium/pdfium && cd pdfium
-ln -s <path to bare-pdfium> pdfium/bare-pdfium
+git clone https://github.com/tetherto/bare-pdfium.git pdfium/bare-pdfium
 gclient config --name pdfium/bare-pdfium --unmanaged --custom-var checkout_configuration=minimal https://github.com/tetherto/bare-pdfium.git
 gclient sync --no-history --shallow
 ln -s pdfium/buildtools buildtools
